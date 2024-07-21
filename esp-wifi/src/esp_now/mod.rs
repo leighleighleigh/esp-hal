@@ -681,6 +681,14 @@ impl<'d> EspNow<'d> {
         (self.manager, self.sender, self.receiver)
     }
 
+    /// Manually de-initialise the esp-now interface,
+    /// and STOP the wifi inferface. 
+    /// This ensures that the wifi peripheral is in a low-power mode for deep sleep usage.
+    /// ADDED BY LEIGH OLIVER FOR DEBUGGING ONLY 21st JULY 2024
+    pub fn stop(&self) {
+        unsafe { esp_wifi_stop(); }
+    }
+
     /// Set the wifi protocol.
     ///
     /// This will set the wifi protocol to the desired protocol
