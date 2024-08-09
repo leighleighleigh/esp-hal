@@ -309,6 +309,23 @@ pub fn receive_queued(queue: *mut c_void, item: *mut c_void, block_time_tick: u3
     }
 }
 
+// Implements queue_msg_waiting (equivalent to FreeRTOS's uxQueueMessagesWaiting)
+// Returns the number of messages waiting in the queue
+pub fn count_messages_queued(queue: *mut c_void) -> u32 {
+    trace!(
+        "queue_msg_waiting {:?}",
+        queue
+    );
+
+    // handle the WIFI_QUEUE
+    if queue != unsafe { addr_of_mut!(REAL_WIFI_QUEUE).cast() } {
+        warn!("Posting message to an unknown queue");
+        return 0;
+    }
+
+    critical_section::with(|_| unsafe { REAL_WIFI_QUEUE.len() }) as u32
+}
+
 /// Implementation of sleep() from newlib in esp-idf.
 /// components/newlib/time.c
 #[no_mangle]
