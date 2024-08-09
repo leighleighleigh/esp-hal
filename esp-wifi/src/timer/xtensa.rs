@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// The timer responsible for time slicing.
-pub type TimeBase = PeriodicTimer<ErasedTimer>;
+pub type TimeBase = PeriodicTimer<'static, ErasedTimer>;
 static TIMER1: Mutex<RefCell<Option<TimeBase>>> = Mutex::new(RefCell::new(None));
 const TIMESLICE_FREQUENCY: fugit::HertzU64 =
     fugit::HertzU64::from_raw(crate::CONFIG.tick_rate_hz as u64);
@@ -28,7 +28,7 @@ pub fn get_systimer_count() -> u64 {
 
 pub fn setup_timer(mut timer1: TimeBase) -> Result<(), esp_hal::timer::Error> {
     timer1.set_interrupt_handler(InterruptHandler::new(
-        unsafe { core::mem::transmute(handler as *const ()) },
+        unsafe { core::mem::transmute::<*const (), extern "C" fn()>(handler as *const ()) },
         interrupt::Priority::Priority2,
     ));
     timer1.start(TIMESLICE_FREQUENCY.into_duration())?;

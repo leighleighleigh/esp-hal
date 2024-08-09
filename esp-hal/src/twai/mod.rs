@@ -640,20 +640,47 @@ where
         _peripheral: impl Peripheral<P = T> + 'd,
         tx_pin: impl Peripheral<P = TX> + 'd,
         rx_pin: impl Peripheral<P = RX> + 'd,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
         baud_rate: BaudRate,
         no_transceiver: bool,
     ) -> Self {
         // Enable the peripheral clock for the TWAI peripheral.
         T::enable_peripheral();
 
+        // Set RESET bit to 1
+        T::register_block()
+            .mode()
+            .write(|w| w.reset_mode().set_bit());
+
         // Set up the GPIO pins.
         crate::into_ref!(tx_pin, rx_pin);
         if no_transceiver {
             tx_pin.set_to_open_drain_output(crate::private::Internal);
         }
+        tx_pin.set_to_push_pull_output(crate::private::Internal);
         tx_pin.connect_peripheral_to_output(T::OUTPUT_SIGNAL, crate::private::Internal);
+        rx_pin.set_to_input(crate::private::Internal);
         rx_pin.connect_input_to_peripheral(T::INPUT_SIGNAL, crate::private::Internal);
+
+        // Set mod to listen only first
+        T::register_block()
+            .mode()
+            .modify(|_, w| w.listen_only_mode().set_bit());
+
+        // Set TEC to 0
+        T::register_block()
+            .tx_err_cnt()
+            .write(|w| unsafe { w.tx_err_cnt().bits(0) });
+
+        // Set REC to 0
+        T::register_block()
+            .rx_err_cnt()
+            .write(|w| unsafe { w.rx_err_cnt().bits(0) });
+
+        // Set EWL to 96
+        T::register_block()
+            .err_warning_limit()
+            .write(|w| unsafe { w.err_warning_limit().bits(96) });
 
         let mut cfg = TwaiConfiguration {
             peripheral: PhantomData,
@@ -674,7 +701,7 @@ where
     /// Set the bitrate of the bus.
     ///
     /// Note: The timings currently assume a APB_CLK of 80MHz.
-    fn set_baud_rate(&mut self, baud_rate: BaudRate, _clocks: &Clocks) {
+    fn set_baud_rate(&mut self, baud_rate: BaudRate, _clocks: &Clocks<'d>) {
         // TWAI is clocked from the APB_CLK according to Table 6-4 [ESP32C3 Reference Manual](https://www.espressif.com/sites/default/files/documentation/esp32-c3_technical_reference_manual_en.pdf)
         // Included timings are all for 80MHz so assert that we are running at 80MHz.
         #[cfg(not(esp32c6))]
@@ -781,7 +808,7 @@ where
         peripheral: impl Peripheral<P = T> + 'd,
         tx_pin: impl Peripheral<P = TX> + 'd,
         rx_pin: impl Peripheral<P = RX> + 'd,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
         baud_rate: BaudRate,
     ) -> Self {
         Self::new_internal(peripheral, tx_pin, rx_pin, clocks, baud_rate, false)
@@ -796,7 +823,7 @@ where
         peripheral: impl Peripheral<P = T> + 'd,
         tx_pin: impl Peripheral<P = TX> + 'd,
         rx_pin: impl Peripheral<P = RX> + 'd,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
         baud_rate: BaudRate,
     ) -> Self {
         Self::new_internal(peripheral, tx_pin, rx_pin, clocks, baud_rate, true)
@@ -826,7 +853,7 @@ where
         peripheral: impl Peripheral<P = T> + 'd,
         tx_pin: impl Peripheral<P = TX> + 'd,
         rx_pin: impl Peripheral<P = RX> + 'd,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
         baud_rate: BaudRate,
     ) -> Self {
         let mut this = Self::new_internal(peripheral, tx_pin, rx_pin, clocks, baud_rate, false);
@@ -843,7 +870,7 @@ where
         peripheral: impl Peripheral<P = T> + 'd,
         tx_pin: impl Peripheral<P = TX> + 'd,
         rx_pin: impl Peripheral<P = RX> + 'd,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
         baud_rate: BaudRate,
     ) -> Self {
         let mut this = Self::new_internal(peripheral, tx_pin, rx_pin, clocks, baud_rate, true);
@@ -1461,6 +1488,12 @@ mod asynch {
         pub rx_queue: Channel<CriticalSectionRawMutex, Result<EspTwaiFrame, EspTwaiError>, 32>,
     }
 
+    impl Default for TwaiAsyncState {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl TwaiAsyncState {
         pub const fn new() -> Self {
             Self {
@@ -1472,6 +1505,7 @@ mod asynch {
     }
 
     const NUM_TWAI: usize = 2;
+    #[allow(clippy::declare_interior_mutable_const)]
     const NEW_STATE: TwaiAsyncState = TwaiAsyncState::new();
     pub(crate) static TWAI_STATE: [TwaiAsyncState; NUM_TWAI] = [NEW_STATE; NUM_TWAI];
 
@@ -1511,7 +1545,7 @@ mod asynch {
 
                 T::write_frame(frame);
 
-                return Poll::Ready(Ok(()));
+                Poll::Ready(Ok(()))
             })
             .await
         }

@@ -27,7 +27,6 @@
 
 use core::marker::PhantomData;
 
-use embedded_dma::{ReadBuffer, WriteBuffer};
 use enumset::{EnumSet, EnumSetType};
 use fugit::HertzU32;
 use peripheral::PeripheralRef;
@@ -48,8 +47,10 @@ use crate::{
         DmaTransferRx,
         DmaTransferTx,
         ParlIoPeripheral,
+        ReadBuffer,
         RxPrivate,
         TxPrivate,
+        WriteBuffer,
     },
     gpio::{InputPin, OutputPin},
     interrupt::InterruptHandler,
@@ -1121,7 +1122,7 @@ where
         tx_descriptors: &'static mut [DmaDescriptor],
         rx_descriptors: &'static mut [DmaDescriptor],
         frequency: HertzU32,
-        _clocks: &Clocks,
+        _clocks: &Clocks<'d>,
     ) -> Result<Self, Error> {
         internal_init(&mut dma_channel, frequency)?;
 
@@ -1214,7 +1215,7 @@ where
         mut dma_channel: Channel<'d, CH, DM>,
         descriptors: &'static mut [DmaDescriptor],
         frequency: HertzU32,
-        _clocks: &Clocks,
+        _clocks: &Clocks<'d>,
     ) -> Result<Self, Error> {
         internal_init(&mut dma_channel, frequency)?;
 
@@ -1302,7 +1303,7 @@ where
         mut dma_channel: Channel<'d, CH, DM>,
         descriptors: &'static mut [DmaDescriptor],
         frequency: HertzU32,
-        _clocks: &Clocks,
+        _clocks: &Clocks<'d>,
     ) -> Result<Self, Error> {
         internal_init(&mut dma_channel, frequency)?;
 
@@ -1429,9 +1430,9 @@ where
     pub fn write_dma<'t, TXBUF>(
         &'t mut self,
         words: &'t TXBUF,
-    ) -> Result<DmaTransferTx<Self>, Error>
+    ) -> Result<DmaTransferTx<'_, Self>, Error>
     where
-        TXBUF: ReadBuffer<Word = u8>,
+        TXBUF: ReadBuffer,
     {
         let (ptr, len) = unsafe { words.read_buffer() };
 
@@ -1525,9 +1526,9 @@ where
     pub fn read_dma<'t, RXBUF>(
         &'t mut self,
         words: &'t mut RXBUF,
-    ) -> Result<DmaTransferRx<Self>, Error>
+    ) -> Result<DmaTransferRx<'_, Self>, Error>
     where
-        RXBUF: WriteBuffer<Word = u8>,
+        RXBUF: WriteBuffer,
     {
         let (ptr, len) = unsafe { words.write_buffer() };
 
@@ -1664,7 +1665,7 @@ pub mod asynch {
 
     use super::{private::Instance, Error, ParlIoRx, ParlIoTx, MAX_DMA_SIZE};
     use crate::{
-        dma::{asynch::DmaRxDoneChFuture, DmaChannel, ParlIoPeripheral},
+        dma::{asynch::DmaRxFuture, DmaChannel, ParlIoPeripheral},
         peripherals::Interrupt,
     };
 
@@ -1752,13 +1753,11 @@ pub mod asynch {
         pub async fn read_dma_async(&mut self, words: &mut [u8]) -> Result<(), Error> {
             let (ptr, len) = (words.as_mut_ptr(), words.len());
 
-            if !Instance::is_suc_eof_generated_externally() {
-                if len > MAX_DMA_SIZE {
-                    return Err(Error::MaxDmaTransferSizeExceeded);
-                }
+            if !Instance::is_suc_eof_generated_externally() && len > MAX_DMA_SIZE {
+                return Err(Error::MaxDmaTransferSizeExceeded);
             }
 
-            let future = DmaRxDoneChFuture::new(&mut self.rx_channel);
+            let future = DmaRxFuture::new(&mut self.rx_channel);
             Self::start_receive_bytes_dma(future.rx, &mut self.rx_chain, ptr, len)?;
             future.await?;
 

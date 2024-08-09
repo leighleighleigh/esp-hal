@@ -43,10 +43,145 @@
 //! ⚠️ Note: Descriptors should be sized as `(max_transfer_size + CHUNK_SIZE - 1) / CHUNK_SIZE`.
 //! I.e., to transfer buffers of size `1..=CHUNK_SIZE`, you need 1 descriptor.
 //!
+//! ⚠️ Note: For chips that support DMA to/from PSRAM (esp32s3) DMA transfers to/from PSRAM
+//! have extra alignment requirements. The address and size of the buffer pointed to by
+//! each descriptor must be a multiple of the cache line (block) size. This is 32 bytes
+//! on esp32s3.
+//!
 //! For convenience you can use the [crate::dma_buffers] macro.
-#![warn(missing_docs)]
+
+#![deny(missing_docs)]
 
 use core::{fmt::Debug, marker::PhantomData, ptr::addr_of_mut, sync::atomic::compiler_fence};
+
+trait Word: crate::private::Sealed {}
+
+macro_rules! impl_word {
+    ($w:ty) => {
+        impl $crate::private::Sealed for $w {}
+        impl Word for $w {}
+    };
+}
+
+impl_word!(u8);
+impl_word!(u16);
+impl_word!(u32);
+impl_word!(i8);
+impl_word!(i16);
+impl_word!(i32);
+
+impl<W, const S: usize> crate::private::Sealed for [W; S] where W: Word {}
+
+impl<W, const S: usize> crate::private::Sealed for &[W; S] where W: Word {}
+
+impl<W> crate::private::Sealed for &[W] where W: Word {}
+
+impl<W> crate::private::Sealed for &mut [W] where W: Word {}
+
+/// Trait for buffers that can be given to DMA for reading.
+pub trait ReadBuffer: crate::private::Sealed {
+    /// Provide a buffer usable for DMA reads.
+    ///
+    /// The return value is:
+    ///
+    /// - pointer to the start of the buffer
+    /// - buffer size in bytes
+    ///
+    /// # Safety
+    ///
+    /// Once this method has been called, it is unsafe to call any `&mut self`
+    /// methods on this object as long as the returned value is in use (by DMA).
+    unsafe fn read_buffer(&self) -> (*const u8, usize);
+}
+
+impl<W, const S: usize> ReadBuffer for [W; S]
+where
+    W: Word,
+{
+    unsafe fn read_buffer(&self) -> (*const u8, usize) {
+        (self.as_ptr() as *const u8, core::mem::size_of_val(self))
+    }
+}
+
+impl<W, const S: usize> ReadBuffer for &[W; S]
+where
+    W: Word,
+{
+    unsafe fn read_buffer(&self) -> (*const u8, usize) {
+        (self.as_ptr() as *const u8, core::mem::size_of_val(*self))
+    }
+}
+
+impl<W, const S: usize> ReadBuffer for &mut [W; S]
+where
+    W: Word,
+{
+    unsafe fn read_buffer(&self) -> (*const u8, usize) {
+        (self.as_ptr() as *const u8, core::mem::size_of_val(*self))
+    }
+}
+
+impl<W> ReadBuffer for &[W]
+where
+    W: Word,
+{
+    unsafe fn read_buffer(&self) -> (*const u8, usize) {
+        (self.as_ptr() as *const u8, core::mem::size_of_val(*self))
+    }
+}
+
+impl<W> ReadBuffer for &mut [W]
+where
+    W: Word,
+{
+    unsafe fn read_buffer(&self) -> (*const u8, usize) {
+        (self.as_ptr() as *const u8, core::mem::size_of_val(*self))
+    }
+}
+
+/// Trait for buffers that can be given to DMA for writing.
+pub trait WriteBuffer: crate::private::Sealed {
+    /// Provide a buffer usable for DMA writes.
+    ///
+    /// The return value is:
+    ///
+    /// - pointer to the start of the buffer
+    /// - buffer size in bytes
+    ///
+    /// # Safety
+    ///
+    /// Once this method has been called, it is unsafe to call any `&mut self`
+    /// methods, except for `write_buffer`, on this object as long as the
+    /// returned value is in use (by DMA).    
+    unsafe fn write_buffer(&mut self) -> (*mut u8, usize);
+}
+
+impl<W, const S: usize> WriteBuffer for [W; S]
+where
+    W: Word,
+{
+    unsafe fn write_buffer(&mut self) -> (*mut u8, usize) {
+        (self.as_mut_ptr() as *mut u8, core::mem::size_of_val(self))
+    }
+}
+
+impl<W, const S: usize> WriteBuffer for &mut [W; S]
+where
+    W: Word,
+{
+    unsafe fn write_buffer(&mut self) -> (*mut u8, usize) {
+        (self.as_mut_ptr() as *mut u8, core::mem::size_of_val(*self))
+    }
+}
+
+impl<W> WriteBuffer for &mut [W]
+where
+    W: Word,
+{
+    unsafe fn write_buffer(&mut self) -> (*mut u8, usize) {
+        (self.as_mut_ptr() as *mut u8, core::mem::size_of_val(*self))
+    }
+}
 
 bitfield::bitfield! {
     #[doc(hidden)]
@@ -66,7 +201,7 @@ impl Debug for DmaDescriptorFlags {
             .field("size", &self.size())
             .field("length", &self.length())
             .field("suc_eof", &self.suc_eof())
-            .field("owner", &self.owner())
+            .field("owner", &(if self.owner() { "DMA" } else { "CPU" }))
             .finish()
     }
 }
@@ -95,6 +230,11 @@ impl DmaDescriptor {
         self.flags.set_length(len as u16)
     }
 
+    #[allow(unused)]
+    fn size(&self) -> usize {
+        self.flags.size() as usize
+    }
+
     fn len(&self) -> usize {
         self.flags.length() as usize
     }
@@ -119,7 +259,6 @@ impl DmaDescriptor {
     }
 }
 
-use embedded_dma::{ReadBuffer, WriteBuffer};
 use enumset::{EnumSet, EnumSetType};
 
 #[cfg(gdma)]
@@ -567,8 +706,8 @@ impl DescriptorChain {
     ) -> Result<(), DmaError> {
         if !crate::soc::is_valid_ram_address(self.first() as u32)
             || !crate::soc::is_valid_ram_address(self.last() as u32)
-            || !crate::soc::is_valid_ram_address(data as u32)
-            || !crate::soc::is_valid_ram_address(unsafe { data.add(len) } as u32)
+            || !crate::soc::is_valid_memory_address(data as u32)
+            || !crate::soc::is_valid_memory_address(unsafe { data.add(len) } as u32)
         {
             return Err(DmaError::UnsupportedMemoryRegion);
         }
@@ -639,8 +778,8 @@ impl DescriptorChain {
     ) -> Result<(), DmaError> {
         if !crate::soc::is_valid_ram_address(self.first() as u32)
             || !crate::soc::is_valid_ram_address(self.last() as u32)
-            || !crate::soc::is_valid_ram_address(data as u32)
-            || !crate::soc::is_valid_ram_address(unsafe { data.add(len) } as u32)
+            || !crate::soc::is_valid_memory_address(data as u32)
+            || !crate::soc::is_valid_memory_address(unsafe { data.add(len) } as u32)
         {
             return Err(DmaError::UnsupportedMemoryRegion);
         }
@@ -705,6 +844,15 @@ impl DescriptorChain {
 
         Ok(())
     }
+}
+
+/// Block size for transfers to/from psram
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[allow(missing_docs)]
+pub enum DmaExtMemBKSize {
+    Size16 = 0,
+    Size32 = 1,
+    Size64 = 2,
 }
 
 pub(crate) struct TxCircularState {
@@ -967,6 +1115,9 @@ pub trait RxPrivate: crate::private::Sealed {
 
     fn start_transfer(&mut self) -> Result<(), DmaError>;
 
+    #[cfg(esp32s3)]
+    fn set_ext_mem_block_size(&self, size: DmaExtMemBKSize);
+
     #[cfg(gdma)]
     fn set_mem2mem_mode(&mut self, value: bool);
 
@@ -1119,11 +1270,35 @@ where
             return Err(DmaError::InvalidAlignment);
         }
 
+        // for esp32s3 we check each descriptor buffer that points to psram for
+        // alignment and invalidate the cache for that buffer
+        // NOTE: for RX the `buffer` and `size` need to be aligned but the `len` does
+        // not. TRM section 3.4.9
+        #[cfg(esp32s3)]
+        for des in chain.descriptors.iter() {
+            // we are forcing the DMA alignment to the cache line size
+            // required when we are using dcache
+            let alignment = crate::soc::cache_get_dcache_line_size() as usize;
+            if crate::soc::is_valid_psram_address(des.buffer as u32) {
+                // both the size and address of the buffer must be aligned
+                if des.buffer as usize % alignment != 0 && des.size() % alignment != 0 {
+                    return Err(DmaError::InvalidAlignment);
+                }
+                // TODO: make this optional?
+                crate::soc::cache_invalidate_addr(des.buffer as u32, des.size() as u32);
+            }
+        }
+
         self.rx_impl.prepare_transfer_without_start(chain, peri)
     }
 
     fn start_transfer(&mut self) -> Result<(), DmaError> {
         self.rx_impl.start_transfer()
+    }
+
+    #[cfg(esp32s3)]
+    fn set_ext_mem_block_size(&self, size: DmaExtMemBKSize) {
+        CH::Channel::set_in_ext_mem_block_size(size);
     }
 
     #[cfg(gdma)]
@@ -1243,6 +1418,9 @@ pub trait TxPrivate: crate::private::Sealed {
     ) -> Result<(), DmaError>;
 
     fn start_transfer(&mut self) -> Result<(), DmaError>;
+
+    #[cfg(esp32s3)]
+    fn set_ext_mem_block_size(&self, size: DmaExtMemBKSize);
 
     fn clear_ch_out_done(&self);
 
@@ -1403,11 +1581,31 @@ where
         peri: DmaPeripheral,
         chain: &DescriptorChain,
     ) -> Result<(), DmaError> {
+        // for esp32s3 we check each descriptor buffer that points to psram for
+        // alignment and writeback the cache for that buffer
+        #[cfg(esp32s3)]
+        for des in chain.descriptors.iter() {
+            // we are forcing the DMA alignment to the cache line size
+            // required when we are using dcache
+            let alignment = crate::soc::cache_get_dcache_line_size() as usize;
+            if crate::soc::is_valid_psram_address(des.buffer as u32) {
+                // both the size and address of the buffer must be aligned
+                if des.buffer as usize % alignment != 0 && des.size() % alignment != 0 {
+                    return Err(DmaError::InvalidAlignment);
+                }
+                crate::soc::cache_writeback_addr(des.buffer as u32, des.size() as u32);
+            }
+        }
         self.tx_impl.prepare_transfer_without_start(chain, peri)
     }
 
     fn start_transfer(&mut self) -> Result<(), DmaError> {
         self.tx_impl.start_transfer()
+    }
+
+    #[cfg(esp32s3)]
+    fn set_ext_mem_block_size(&self, size: DmaExtMemBKSize) {
+        CH::Channel::set_out_ext_mem_block_size(size);
     }
 
     fn clear_ch_out_done(&self) {
@@ -1452,7 +1650,7 @@ where
 
     #[cfg(feature = "async")]
     fn waker() -> &'static embassy_sync::waitqueue::AtomicWaker {
-        CH::Rx::waker()
+        CH::Tx::waker()
     }
 
     fn is_listening_out_descriptor_error(&self) -> bool {
@@ -1489,6 +1687,8 @@ pub trait RegisterAccess: crate::private::Sealed {
     fn init_channel();
     #[cfg(gdma)]
     fn set_mem2mem_mode(value: bool);
+    #[cfg(esp32s3)]
+    fn set_out_ext_mem_block_size(size: DmaExtMemBKSize);
     fn set_out_burstmode(burst_mode: bool);
     fn set_out_priority(priority: DmaPriority);
     fn clear_out_interrupts();
@@ -1507,6 +1707,8 @@ pub trait RegisterAccess: crate::private::Sealed {
     fn reset_out_eof_interrupt();
     fn last_out_dscr_address() -> usize;
 
+    #[cfg(esp32s3)]
+    fn set_in_ext_mem_block_size(size: DmaExtMemBKSize);
     fn set_in_burstmode(burst_mode: bool);
     fn set_in_priority(priority: DmaPriority);
     fn clear_in_interrupts();
@@ -1667,6 +1869,10 @@ pub(crate) mod dma_private {
 }
 
 /// DMA transaction for TX only transfers
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferTx<'a, I>
@@ -1711,6 +1917,10 @@ where
 }
 
 /// DMA transaction for RX only transfers
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferRx<'a, I>
@@ -1755,6 +1965,10 @@ where
 }
 
 /// DMA transaction for TX+RX transfers
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferTxRx<'a, I>
@@ -1800,12 +2014,16 @@ where
 
 /// DMA transaction for TX transfers with moved-in/moved-out peripheral and
 /// buffer
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferTxOwned<I, T>
 where
     I: dma_private::DmaSupportTx,
-    T: ReadBuffer<Word = u8>,
+    T: ReadBuffer,
 {
     instance: I,
     tx_buffer: T,
@@ -1814,7 +2032,7 @@ where
 impl<I, T> DmaTransferTxOwned<I, T>
 where
     I: dma_private::DmaSupportTx,
-    T: ReadBuffer<Word = u8>,
+    T: ReadBuffer,
 {
     pub(crate) fn new(instance: I, tx_buffer: T) -> Self {
         Self {
@@ -1862,7 +2080,7 @@ where
 impl<I, T> Drop for DmaTransferTxOwned<I, T>
 where
     I: dma_private::DmaSupportTx,
-    T: ReadBuffer<Word = u8>,
+    T: ReadBuffer,
 {
     fn drop(&mut self) {
         self.instance.peripheral_wait_dma(true, false);
@@ -1871,12 +2089,16 @@ where
 
 /// DMA transaction for RX transfers with moved-in/moved-out peripheral and
 /// buffer
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferRxOwned<I, R>
 where
     I: dma_private::DmaSupportRx,
-    R: WriteBuffer<Word = u8>,
+    R: WriteBuffer,
 {
     instance: I,
     rx_buffer: R,
@@ -1885,7 +2107,7 @@ where
 impl<I, R> DmaTransferRxOwned<I, R>
 where
     I: dma_private::DmaSupportRx,
-    R: WriteBuffer<Word = u8>,
+    R: WriteBuffer,
 {
     pub(crate) fn new(instance: I, rx_buffer: R) -> Self {
         Self {
@@ -1933,7 +2155,7 @@ where
 impl<I, R> Drop for DmaTransferRxOwned<I, R>
 where
     I: dma_private::DmaSupportRx,
-    R: WriteBuffer<Word = u8>,
+    R: WriteBuffer,
 {
     fn drop(&mut self) {
         self.instance.peripheral_wait_dma(false, true);
@@ -1942,13 +2164,17 @@ where
 
 /// DMA transaction for TX+RX transfers with moved-in/moved-out peripheral and
 /// buffers
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferTxRxOwned<I, T, R>
 where
     I: dma_private::DmaSupportTx + dma_private::DmaSupportRx,
-    T: ReadBuffer<Word = u8>,
-    R: WriteBuffer<Word = u8>,
+    T: ReadBuffer,
+    R: WriteBuffer,
 {
     instance: I,
     tx_buffer: T,
@@ -1958,8 +2184,8 @@ where
 impl<I, T, R> DmaTransferTxRxOwned<I, T, R>
 where
     I: dma_private::DmaSupportTx + dma_private::DmaSupportRx,
-    T: ReadBuffer<Word = u8>,
-    R: WriteBuffer<Word = u8>,
+    T: ReadBuffer,
+    R: WriteBuffer,
 {
     pub(crate) fn new(instance: I, tx_buffer: T, rx_buffer: R) -> Self {
         Self {
@@ -2010,8 +2236,8 @@ where
 impl<I, T, R> Drop for DmaTransferTxRxOwned<I, T, R>
 where
     I: dma_private::DmaSupportTx + dma_private::DmaSupportRx,
-    T: ReadBuffer<Word = u8>,
-    R: WriteBuffer<Word = u8>,
+    T: ReadBuffer,
+    R: WriteBuffer,
 {
     fn drop(&mut self) {
         self.instance.peripheral_wait_dma(true, true);
@@ -2019,6 +2245,10 @@ where
 }
 
 /// DMA transaction for TX only circular transfers
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferTxCircular<'a, I>
@@ -2083,6 +2313,10 @@ where
 }
 
 /// DMA transaction for RX only circular transfers
+///
+/// # Safety
+///
+/// Never use [core::mem::forget] on an in-progress transfer
 #[non_exhaustive]
 #[must_use]
 pub struct DmaTransferRxCircular<'a, I>
@@ -2141,7 +2375,10 @@ pub(crate) mod asynch {
 
     use super::*;
 
-    pub struct DmaTxFuture<'a, TX> {
+    pub struct DmaTxFuture<'a, TX>
+    where
+        TX: Tx,
+    {
         pub(crate) tx: &'a mut TX,
         _a: (),
     }
@@ -2151,8 +2388,6 @@ pub(crate) mod asynch {
         TX: Tx,
     {
         pub fn new(tx: &'a mut TX) -> Self {
-            tx.listen_eof();
-            tx.listen_out_descriptor_error();
             Self { tx, _a: () }
         }
 
@@ -2172,20 +2407,34 @@ pub(crate) mod asynch {
             cx: &mut core::task::Context<'_>,
         ) -> Poll<Self::Output> {
             TX::waker().register(cx.waker());
-            if self.tx.is_listening_eof() {
-                Poll::Pending
+            if self.tx.is_done() {
+                self.tx.clear_interrupts();
+                Poll::Ready(Ok(()))
+            } else if self.tx.has_error() {
+                self.tx.clear_interrupts();
+                Poll::Ready(Err(DmaError::DescriptorError))
             } else {
-                if self.tx.has_error() {
-                    self.tx.clear_interrupts();
-                    Poll::Ready(Err(DmaError::DescriptorError))
-                } else {
-                    Poll::Ready(Ok(()))
-                }
+                self.tx.listen_eof();
+                self.tx.listen_out_descriptor_error();
+                Poll::Pending
             }
         }
     }
 
-    pub struct DmaRxFuture<'a, RX> {
+    impl<'a, TX> Drop for DmaTxFuture<'a, TX>
+    where
+        TX: Tx,
+    {
+        fn drop(&mut self) {
+            self.tx.unlisten_eof();
+            self.tx.unlisten_out_descriptor_error();
+        }
+    }
+
+    pub struct DmaRxFuture<'a, RX>
+    where
+        RX: Rx,
+    {
         pub(crate) rx: &'a mut RX,
         _a: (),
     }
@@ -2195,10 +2444,6 @@ pub(crate) mod asynch {
         RX: Rx,
     {
         pub fn new(rx: &'a mut RX) -> Self {
-            rx.listen_eof();
-            rx.listen_in_descriptor_error();
-            rx.listen_in_descriptor_error_dscr_empty();
-            rx.listen_in_descriptor_error_err_eof();
             Self { rx, _a: () }
         }
 
@@ -2218,22 +2463,42 @@ pub(crate) mod asynch {
             cx: &mut core::task::Context<'_>,
         ) -> Poll<Self::Output> {
             RX::waker().register(cx.waker());
-            if self.rx.is_listening_eof() {
-                Poll::Pending
+            if self.rx.is_done() {
+                self.rx.clear_interrupts();
+                Poll::Ready(Ok(()))
+            } else if self.rx.has_error()
+                || self.rx.has_dscr_empty_error()
+                || self.rx.has_eof_error()
+            {
+                self.rx.clear_interrupts();
+                Poll::Ready(Err(DmaError::DescriptorError))
             } else {
-                if self.rx.has_error() || self.rx.has_dscr_empty_error() || self.rx.has_eof_error()
-                {
-                    self.rx.clear_interrupts();
-                    Poll::Ready(Err(DmaError::DescriptorError))
-                } else {
-                    Poll::Ready(Ok(()))
-                }
+                self.rx.listen_eof();
+                self.rx.listen_in_descriptor_error();
+                self.rx.listen_in_descriptor_error_dscr_empty();
+                self.rx.listen_in_descriptor_error_err_eof();
+                Poll::Pending
             }
         }
     }
 
+    impl<'a, RX> Drop for DmaRxFuture<'a, RX>
+    where
+        RX: Rx,
+    {
+        fn drop(&mut self) {
+            self.rx.unlisten_eof();
+            self.rx.unlisten_in_descriptor_error();
+            self.rx.unlisten_in_descriptor_error_dscr_empty();
+            self.rx.unlisten_in_descriptor_error_err_eof();
+        }
+    }
+
     #[cfg(any(i2s0, i2s1))]
-    pub struct DmaTxDoneChFuture<'a, TX> {
+    pub struct DmaTxDoneChFuture<'a, TX>
+    where
+        TX: Tx,
+    {
         pub(crate) tx: &'a mut TX,
         _a: (),
     }
@@ -2244,8 +2509,6 @@ pub(crate) mod asynch {
         TX: Tx,
     {
         pub fn new(tx: &'a mut TX) -> Self {
-            tx.listen_ch_out_done();
-            tx.listen_out_descriptor_error();
             Self { tx, _a: () }
         }
     }
@@ -2262,21 +2525,36 @@ pub(crate) mod asynch {
             cx: &mut core::task::Context<'_>,
         ) -> Poll<Self::Output> {
             TX::waker().register(cx.waker());
-            if self.tx.is_listening_ch_out_done() {
-                Poll::Pending
+            if self.tx.is_ch_out_done_set() {
+                self.tx.clear_ch_out_done();
+                Poll::Ready(Ok(()))
+            } else if self.tx.has_error() {
+                self.tx.clear_interrupts();
+                Poll::Ready(Err(DmaError::DescriptorError))
             } else {
-                if self.tx.has_error() {
-                    self.tx.clear_interrupts();
-                    Poll::Ready(Err(DmaError::DescriptorError))
-                } else {
-                    Poll::Ready(Ok(()))
-                }
+                self.tx.listen_ch_out_done();
+                self.tx.listen_out_descriptor_error();
+                Poll::Pending
             }
         }
     }
 
     #[cfg(any(i2s0, i2s1))]
-    pub struct DmaRxDoneChFuture<'a, RX> {
+    impl<'a, TX> Drop for DmaTxDoneChFuture<'a, TX>
+    where
+        TX: Tx,
+    {
+        fn drop(&mut self) {
+            self.tx.unlisten_ch_out_done();
+            self.tx.unlisten_out_descriptor_error();
+        }
+    }
+
+    #[cfg(any(i2s0, i2s1))]
+    pub struct DmaRxDoneChFuture<'a, RX>
+    where
+        RX: Rx,
+    {
         pub(crate) rx: &'a mut RX,
         _a: (),
     }
@@ -2287,10 +2565,6 @@ pub(crate) mod asynch {
         RX: Rx,
     {
         pub fn new(rx: &'a mut RX) -> Self {
-            rx.listen_ch_in_done();
-            rx.listen_in_descriptor_error();
-            rx.listen_in_descriptor_error_dscr_empty();
-            rx.listen_in_descriptor_error_err_eof();
             Self { rx, _a: () }
         }
     }
@@ -2307,17 +2581,35 @@ pub(crate) mod asynch {
             cx: &mut core::task::Context<'_>,
         ) -> Poll<Self::Output> {
             RX::waker().register(cx.waker());
-            if self.rx.is_listening_ch_in_done() {
-                Poll::Pending
+            if self.rx.is_ch_in_done_set() {
+                self.rx.clear_ch_in_done();
+                Poll::Ready(Ok(()))
+            } else if self.rx.has_error()
+                || self.rx.has_dscr_empty_error()
+                || self.rx.has_eof_error()
+            {
+                self.rx.clear_interrupts();
+                Poll::Ready(Err(DmaError::DescriptorError))
             } else {
-                if self.rx.has_error() || self.rx.has_dscr_empty_error() || self.rx.has_eof_error()
-                {
-                    self.rx.clear_interrupts();
-                    Poll::Ready(Err(DmaError::DescriptorError))
-                } else {
-                    Poll::Ready(Ok(()))
-                }
+                self.rx.listen_ch_in_done();
+                self.rx.listen_in_descriptor_error();
+                self.rx.listen_in_descriptor_error_dscr_empty();
+                self.rx.listen_in_descriptor_error_err_eof();
+                Poll::Pending
             }
+        }
+    }
+
+    #[cfg(any(i2s0, i2s1))]
+    impl<'a, RX> Drop for DmaRxDoneChFuture<'a, RX>
+    where
+        RX: Rx,
+    {
+        fn drop(&mut self) {
+            self.rx.unlisten_ch_in_done();
+            self.rx.unlisten_in_descriptor_error();
+            self.rx.unlisten_in_descriptor_error_dscr_empty();
+            self.rx.unlisten_in_descriptor_error_err_eof();
         }
     }
 
@@ -2342,25 +2634,21 @@ pub(crate) mod asynch {
         }
 
         if Channel::is_in_done() && Channel::is_listening_in_eof() {
-            Channel::clear_in_interrupts();
             Channel::unlisten_in_eof();
             Rx::waker().wake()
         }
 
         if Channel::is_ch_in_done_set() {
-            Channel::clear_ch_in_done();
             Channel::unlisten_ch_in_done();
             Rx::waker().wake()
         }
 
         if Channel::is_out_done() && Channel::is_listening_out_eof() {
-            Channel::clear_out_interrupts();
             Channel::unlisten_out_eof();
             Tx::waker().wake()
         }
 
         if Channel::is_ch_out_done_set() {
-            Channel::clear_ch_out_done();
             Channel::unlisten_ch_out_done();
             Tx::waker().wake()
         }

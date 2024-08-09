@@ -144,8 +144,6 @@ where
 }
 
 pub mod dma {
-    use embedded_dma::{ReadBuffer, WriteBuffer};
-
     use super::*;
     #[cfg(spi3)]
     use crate::dma::Spi3Peripheral;
@@ -161,10 +159,12 @@ pub mod dma {
             DmaTransferRx,
             DmaTransferTx,
             DmaTransferTxRx,
+            ReadBuffer,
             RxPrivate,
             Spi2Peripheral,
             SpiPeripheral,
             TxPrivate,
+            WriteBuffer,
         },
         Mode,
     };
@@ -344,9 +344,9 @@ pub mod dma {
         pub fn dma_write<'t, TXBUF>(
             &'t mut self,
             words: &'t TXBUF,
-        ) -> Result<DmaTransferTx<Self>, Error>
+        ) -> Result<DmaTransferTx<'_, Self>, Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
         {
             let (ptr, len) = unsafe { words.read_buffer() };
 
@@ -370,9 +370,9 @@ pub mod dma {
         pub fn dma_read<'t, RXBUF>(
             &'t mut self,
             words: &'t mut RXBUF,
-        ) -> Result<DmaTransferRx<Self>, Error>
+        ) -> Result<DmaTransferRx<'_, Self>, Error>
         where
-            RXBUF: WriteBuffer<Word = u8>,
+            RXBUF: WriteBuffer,
         {
             let (ptr, len) = unsafe { words.write_buffer() };
 
@@ -398,10 +398,10 @@ pub mod dma {
             &'t mut self,
             words: &'t TXBUF,
             read_buffer: &'t mut RXBUF,
-        ) -> Result<DmaTransferTxRx<Self>, Error>
+        ) -> Result<DmaTransferTxRx<'_, Self>, Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
-            RXBUF: WriteBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
+            RXBUF: WriteBuffer,
         {
             let (write_ptr, write_len) = unsafe { words.read_buffer() };
             let (read_ptr, read_len) = unsafe { read_buffer.write_buffer() };

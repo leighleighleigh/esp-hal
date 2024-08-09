@@ -81,6 +81,8 @@ mod tests {
 
     #[test]
     #[timeout(3)]
+    // S3 is disabled due to https://github.com/esp-rs/esp-hal/issues/1524#issuecomment-2255306292
+    #[cfg(not(feature = "esp32s3"))]
     fn test_asymmetric_dma_transfer() {
         let peripherals = Peripherals::take();
         let system = SystemControl::new(peripherals.SYSTEM);
@@ -193,7 +195,12 @@ mod tests {
         let tx_buffer = {
             // using `static`, not `static mut`, places the array in .rodata
             static TX_BUFFER: [u8; DMA_BUFFER_SIZE] = [42u8; DMA_BUFFER_SIZE];
-            unsafe { &mut *(core::ptr::addr_of!(TX_BUFFER) as *mut u8) }
+            unsafe {
+                core::slice::from_raw_parts(
+                    &mut *(core::ptr::addr_of!(TX_BUFFER) as *mut u8),
+                    DMA_BUFFER_SIZE,
+                )
+            }
         };
 
         let mut spi = Spi::new(peripherals.SPI2, 100.kHz(), SpiMode::Mode0, &clocks)
@@ -241,7 +248,12 @@ mod tests {
         let rx_buffer = {
             // using `static`, not `static mut`, places the array in .rodata
             static RX_BUFFER: [u8; DMA_BUFFER_SIZE] = [42u8; DMA_BUFFER_SIZE];
-            unsafe { &mut *(core::ptr::addr_of!(RX_BUFFER) as *mut u8) }
+            unsafe {
+                core::slice::from_raw_parts_mut(
+                    &mut *(core::ptr::addr_of!(RX_BUFFER) as *mut u8),
+                    DMA_BUFFER_SIZE,
+                )
+            }
         };
 
         let mut spi = Spi::new(peripherals.SPI2, 100.kHz(), SpiMode::Mode0, &clocks)

@@ -454,7 +454,7 @@ where
         spi: impl Peripheral<P = T> + 'd,
         frequency: HertzU32,
         mode: SpiMode,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
     ) -> Spi<'d, T, FullDuplexMode> {
         crate::into_ref!(spi);
         Self::new_internal(spi, frequency, mode, clocks)
@@ -542,7 +542,7 @@ where
         spi: PeripheralRef<'d, T>,
         frequency: HertzU32,
         mode: SpiMode,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
     ) -> Spi<'d, T, FullDuplexMode> {
         spi.enable_peripheral();
 
@@ -557,7 +557,7 @@ where
         spi
     }
 
-    pub fn change_bus_frequency(&mut self, frequency: HertzU32, clocks: &Clocks) {
+    pub fn change_bus_frequency(&mut self, frequency: HertzU32, clocks: &Clocks<'d>) {
         self.spi.ch_bus_freq(frequency, clocks);
     }
 }
@@ -574,7 +574,7 @@ where
         spi: impl Peripheral<P = T> + 'd,
         frequency: HertzU32,
         mode: SpiMode,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
     ) -> Spi<'d, T, HalfDuplexMode> {
         crate::into_ref!(spi);
         Self::new_internal(spi, frequency, mode, clocks)
@@ -719,7 +719,7 @@ where
         spi: PeripheralRef<'d, T>,
         frequency: HertzU32,
         mode: SpiMode,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
     ) -> Spi<'d, T, HalfDuplexMode> {
         spi.enable_peripheral();
 
@@ -734,7 +734,7 @@ where
         spi
     }
 
-    pub fn change_bus_frequency(&mut self, frequency: HertzU32, clocks: &Clocks) {
+    pub fn change_bus_frequency(&mut self, frequency: HertzU32, clocks: &Clocks<'d>) {
         self.spi.ch_bus_freq(frequency, clocks);
     }
 
@@ -839,8 +839,6 @@ where
 }
 
 pub mod dma {
-    use embedded_dma::{ReadBuffer, WriteBuffer};
-
     use super::*;
     #[cfg(spi3)]
     use crate::dma::Spi3Peripheral;
@@ -859,9 +857,11 @@ pub mod dma {
             DmaTransferTxOwned,
             DmaTransferTxRx,
             DmaTransferTxRxOwned,
+            ReadBuffer,
             Spi2Peripheral,
             SpiPeripheral,
             TxPrivate,
+            WriteBuffer,
         },
         InterruptConfigurable,
         Mode,
@@ -1047,7 +1047,7 @@ pub mod dma {
         M: DuplexMode,
         DmaMode: Mode,
     {
-        pub fn change_bus_frequency(&mut self, frequency: HertzU32, clocks: &Clocks) {
+        pub fn change_bus_frequency(&mut self, frequency: HertzU32, clocks: &Clocks<'d>) {
             self.spi.ch_bus_freq(frequency, clocks);
         }
     }
@@ -1123,9 +1123,9 @@ pub mod dma {
         pub fn dma_write<'t, TXBUF>(
             &'t mut self,
             words: &'t TXBUF,
-        ) -> Result<DmaTransferTx<Self>, super::Error>
+        ) -> Result<DmaTransferTx<'_, Self>, super::Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
         {
             self.dma_write_start(words)?;
             Ok(DmaTransferTx::new(self))
@@ -1142,7 +1142,7 @@ pub mod dma {
             words: TXBUF,
         ) -> Result<DmaTransferTxOwned<Self, TXBUF>, super::Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
         {
             self.dma_write_start(&words)?;
             Ok(DmaTransferTxOwned::new(self, words))
@@ -1151,7 +1151,7 @@ pub mod dma {
         #[cfg_attr(feature = "place-spi-driver-in-ram", ram)]
         fn dma_write_start<'t, TXBUF>(&'t mut self, words: &'t TXBUF) -> Result<(), super::Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
         {
             let (ptr, len) = unsafe { words.read_buffer() };
 
@@ -1178,9 +1178,9 @@ pub mod dma {
         pub fn dma_read<'t, RXBUF>(
             &'t mut self,
             words: &'t mut RXBUF,
-        ) -> Result<DmaTransferRx<Self>, super::Error>
+        ) -> Result<DmaTransferRx<'_, Self>, super::Error>
         where
-            RXBUF: WriteBuffer<Word = u8>,
+            RXBUF: WriteBuffer,
         {
             self.dma_read_start(words)?;
             Ok(DmaTransferRx::new(self))
@@ -1197,7 +1197,7 @@ pub mod dma {
             mut words: RXBUF,
         ) -> Result<DmaTransferRxOwned<Self, RXBUF>, super::Error>
         where
-            RXBUF: WriteBuffer<Word = u8>,
+            RXBUF: WriteBuffer,
         {
             self.dma_read_start(&mut words)?;
             Ok(DmaTransferRxOwned::new(self, words))
@@ -1206,7 +1206,7 @@ pub mod dma {
         #[cfg_attr(feature = "place-spi-driver-in-ram", ram)]
         fn dma_read_start<'t, RXBUF>(&'t mut self, words: &'t mut RXBUF) -> Result<(), super::Error>
         where
-            RXBUF: WriteBuffer<Word = u8>,
+            RXBUF: WriteBuffer,
         {
             let (ptr, len) = unsafe { words.write_buffer() };
 
@@ -1234,10 +1234,10 @@ pub mod dma {
             &'t mut self,
             words: &'t TXBUF,
             read_buffer: &'t mut RXBUF,
-        ) -> Result<DmaTransferTxRx<Self>, super::Error>
+        ) -> Result<DmaTransferTxRx<'_, Self>, super::Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
-            RXBUF: WriteBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
+            RXBUF: WriteBuffer,
         {
             self.dma_transfer_start(words, read_buffer)?;
             Ok(DmaTransferTxRx::new(self))
@@ -1254,8 +1254,8 @@ pub mod dma {
             mut read_buffer: RXBUF,
         ) -> Result<DmaTransferTxRxOwned<Self, TXBUF, RXBUF>, super::Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
-            RXBUF: WriteBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
+            RXBUF: WriteBuffer,
         {
             self.dma_transfer_start(&words, &mut read_buffer)?;
             Ok(DmaTransferTxRxOwned::new(self, words, read_buffer))
@@ -1267,8 +1267,8 @@ pub mod dma {
             read_buffer: &'t mut RXBUF,
         ) -> Result<(), super::Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
-            RXBUF: WriteBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
+            RXBUF: WriteBuffer,
         {
             let (write_ptr, write_len) = unsafe { words.read_buffer() };
             let (read_ptr, read_len) = unsafe { read_buffer.write_buffer() };
@@ -1310,9 +1310,9 @@ pub mod dma {
             address: Address,
             dummy: u8,
             buffer: &'t mut RXBUF,
-        ) -> Result<DmaTransferRx<Self>, super::Error>
+        ) -> Result<DmaTransferRx<'_, Self>, super::Error>
         where
-            RXBUF: WriteBuffer<Word = u8>,
+            RXBUF: WriteBuffer,
         {
             let (ptr, len) = unsafe { buffer.write_buffer() };
 
@@ -1389,9 +1389,9 @@ pub mod dma {
             address: Address,
             dummy: u8,
             buffer: &'t TXBUF,
-        ) -> Result<DmaTransferTx<Self>, super::Error>
+        ) -> Result<DmaTransferTx<'_, Self>, super::Error>
         where
-            TXBUF: ReadBuffer<Word = u8>,
+            TXBUF: ReadBuffer,
         {
             let (ptr, len) = unsafe { buffer.read_buffer() };
 
@@ -1627,12 +1627,9 @@ pub mod dma {
                             rx_future.rx(),
                         )?;
                     }
-                    match embassy_futures::join::join(tx_future, rx_future).await {
-                        (tx_res, rx_res) => {
-                            tx_res?;
-                            rx_res?;
-                        }
-                    }
+                    let (tx_res, rx_res) = embassy_futures::join::join(tx_future, rx_future).await;
+                    tx_res?;
+                    rx_res?;
 
                     self.spi.flush()?;
 
@@ -1663,12 +1660,9 @@ pub mod dma {
                         )?;
                     }
 
-                    match embassy_futures::join::join(tx_future, rx_future).await {
-                        (tx_res, rx_res) => {
-                            tx_res?;
-                            rx_res?;
-                        }
-                    }
+                    let (tx_res, rx_res) = embassy_futures::join::join(tx_future, rx_future).await;
+                    tx_res?;
+                    rx_res?;
 
                     self.spi.flush()?;
                 }
@@ -1689,16 +1683,15 @@ pub mod dma {
             }
 
             async fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
-                Ok(
-                    if !crate::soc::is_valid_ram_address(&words[0] as *const _ as u32) {
-                        for chunk in words.chunks(SIZE) {
-                            self.buffer[..chunk.len()].copy_from_slice(chunk);
-                            self.inner.write(&self.buffer[..chunk.len()]).await?;
-                        }
-                    } else {
-                        self.inner.write(words).await?;
-                    },
-                )
+                if !crate::soc::is_valid_ram_address(&words[0] as *const _ as u32) {
+                    for chunk in words.chunks(SIZE) {
+                        self.buffer[..chunk.len()].copy_from_slice(chunk);
+                        self.inner.write(&self.buffer[..chunk.len()]).await?;
+                    }
+                } else {
+                    self.inner.write(words).await?;
+                }
+                Ok(())
             }
 
             async fn flush(&mut self) -> Result<(), Self::Error> {
@@ -1710,18 +1703,17 @@ pub mod dma {
             }
 
             async fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
-                Ok(
-                    if !crate::soc::is_valid_ram_address(&write[0] as *const _ as u32) {
-                        for (read, write) in read.chunks_mut(SIZE).zip(write.chunks(SIZE)) {
-                            self.buffer[..write.len()].copy_from_slice(write);
-                            self.inner
-                                .transfer(read, &self.buffer[..write.len()])
-                                .await?;
-                        }
-                    } else {
-                        self.inner.transfer(read, write).await?;
-                    },
-                )
+                if !crate::soc::is_valid_ram_address(&write[0] as *const _ as u32) {
+                    for (read, write) in read.chunks_mut(SIZE).zip(write.chunks(SIZE)) {
+                        self.buffer[..write.len()].copy_from_slice(write);
+                        self.inner
+                            .transfer(read, &self.buffer[..write.len()])
+                            .await?;
+                    }
+                } else {
+                    self.inner.transfer(read, write).await?;
+                }
+                Ok(())
             }
         }
     }
@@ -2040,10 +2032,16 @@ where
         tx.is_done();
         rx.is_done();
 
+        // re-enable the MISO and MOSI
+        reg_block
+            .user()
+            .modify(|_, w| w.usr_miso().bit(true).usr_mosi().bit(true));
+
         self.enable_dma();
         self.update();
 
         reset_dma_before_load_dma_dscr(reg_block);
+        self.clear_dma_interrupts();
         tx_chain.fill_for_tx(false, write_buffer_ptr, write_buffer_len)?;
         tx.prepare_transfer_without_start(self.dma_peripheral(), tx_chain)
             .and_then(|_| tx.start_transfer())?;
@@ -2051,7 +2049,6 @@ where
         rx.prepare_transfer_without_start(self.dma_peripheral(), rx_chain)
             .and_then(|_| rx.start_transfer())?;
 
-        self.clear_dma_interrupts();
         reset_dma_before_usr_cmd(reg_block);
 
         reg_block.cmd().modify(|_, w| w.usr().set_bit());
@@ -2090,17 +2087,22 @@ where
 
         tx.is_done();
 
+        // disable MISO and re-enable MOSI
+        reg_block
+            .user()
+            .modify(|_, w| w.usr_miso().bit(false).usr_mosi().bit(true));
+
         self.enable_dma();
         self.update();
 
         reset_dma_before_load_dma_dscr(reg_block);
+        self.clear_dma_interrupts();
         chain.fill_for_tx(false, ptr, len)?;
         unsafe {
             tx.prepare_transfer_without_start(self.dma_peripheral(), chain)
                 .and_then(|_| tx.start_transfer())?;
         }
 
-        self.clear_dma_interrupts();
         reset_dma_before_usr_cmd(reg_block);
 
         reg_block.cmd().modify(|_, w| w.usr().set_bit());
@@ -2121,15 +2123,20 @@ where
 
         rx.is_done();
 
+        // re-enable MISO and disable MOSI
+        reg_block
+            .user()
+            .modify(|_, w| w.usr_miso().bit(true).usr_mosi().bit(false));
+
         self.enable_dma();
         self.update();
 
         reset_dma_before_load_dma_dscr(reg_block);
+        self.clear_dma_interrupts();
         chain.fill_for_rx(false, ptr, len)?;
         rx.prepare_transfer_without_start(self.dma_peripheral(), chain)
             .and_then(|_| rx.start_transfer())?;
 
-        self.clear_dma_interrupts();
         reset_dma_before_usr_cmd(reg_block);
 
         reg_block.cmd().modify(|_, w| w.usr().set_bit());
@@ -2562,7 +2569,7 @@ pub trait Instance: private::Sealed {
     }
 
     // taken from https://github.com/apache/incubator-nuttx/blob/8267a7618629838231256edfa666e44b5313348e/arch/risc-v/src/esp32c3/esp32c3_spi.c#L496
-    fn setup(&mut self, frequency: HertzU32, clocks: &Clocks) {
+    fn setup(&mut self, frequency: HertzU32, clocks: &Clocks<'_>) {
         #[cfg(not(esp32h2))]
         let apb_clk_freq: HertzU32 = HertzU32::Hz(clocks.apb_clock.to_Hz());
         // ESP32-H2 is using PLL_48M_CLK source instead of APB_CLK
@@ -2761,7 +2768,7 @@ pub trait Instance: private::Sealed {
         self
     }
 
-    fn ch_bus_freq(&mut self, frequency: HertzU32, clocks: &Clocks) {
+    fn ch_bus_freq(&mut self, frequency: HertzU32, clocks: &Clocks<'_>) {
         // Disable clock source
         #[cfg(not(any(esp32, esp32s2)))]
         self.register_block().clk_gate().modify(|_, w| {

@@ -9,14 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added new `Io::new_no_bind_interrupt` constructor (#1861)
+- Added touch pad support for esp32 (#1873)
+
 ### Changed
+
 - Peripheral driver constructors don't take `InterruptHandler`s anymore. Use `set_interrupt_handler` to explicitly set the interrupt handler now. (#1819)
+- Use the peripheral ref pattern for `OneShotTimer` and `PeriodicTimer` (#1855)
+
+- Allow DMA to/from psram for esp32s3 (#1827)
+- DMA buffers now don't require a static lifetime. Make sure to never `mem::forget` an in-progress DMA transfer (consider using `#[deny(clippy::mem_forget)]`) (#1837)
 
 ### Fixed
+
+- Improve error detection in the I2C driver (#1847)
+- Fix I2S async-tx (#1833)
+- Fix PARL_IO async-rx (#1851)
+- SPI: Clear DMA interrupts before (not after) DMA starts (#1859)
+- SPI: disable and re-enable MISO and MOSI in `start_transfer_dma`, `start_read_bytes_dma` and `start_write_bytes_dma` accordingly (#1894)
+- TWAI: GPIO pins are not configured as input and output (#1906)
 
 ### Removed
 
 - This package no longer re-exports the `esp_hal_procmacros::main` macro (#1828)
+- The `AesFlavour` trait no longer has the `ENCRYPT_MODE`/`DECRYPT_MODE` associated constants (#1849)
 
 ## [0.19.0] - 2024-07-15
 
@@ -31,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add DmaTransactionTxOwned, DmaTransactionRxOwned, DmaTransactionTxRxOwned, functions to do owning transfers added to SPI half-duplex (#1672)
 - uart: Implement `embedded_io::ReadReady` for `Uart` and `UartRx` (#1702)
 - ESP32-S3: Expose optional HSYNC input in LCD_CAM (#1707)
+- ESP32-S3: Add async support to the LCD_CAM I8080 driver (#1834)
 - ESP32-C6: Support lp-core as wake-up source (#1723)
 - Add support for GPIO wake-up source (#1724)
 - gpio: add DummyPin (#1769)
@@ -40,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - uart: Make `rx_timeout` optional in Config struct (#1759)
 - Add interrupt related functions to `PeriodicTimer`/`OneShotTimer`, added `ErasedTimer` (#1753)
 - Added blocking `read_bytes` method to `Uart` and `UartRx` (#1784)
+- Add method to expose `InputPin::is_interrupt_set` in `Input<InputPin>` for use in interrupt handlers (#1829)
 
 ### Fixed
 

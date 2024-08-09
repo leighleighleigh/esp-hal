@@ -586,6 +586,18 @@ where
     }
 }
 
+impl<T, DM, const CHANNEL: u8> Peripheral for Alarm<T, DM, CHANNEL>
+where
+    DM: Mode,
+{
+    type P = Self;
+
+    #[inline]
+    unsafe fn clone_unchecked(&mut self) -> Self::P {
+        core::ptr::read(self as *const _)
+    }
+}
+
 // Async functionality of the system timer.
 #[cfg(feature = "async")]
 mod asynch {
@@ -601,6 +613,7 @@ mod asynch {
 
     const NUM_ALARMS: usize = 3;
 
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: AtomicWaker = AtomicWaker::new();
     static WAKERS: [AtomicWaker; NUM_ALARMS] = [INIT; NUM_ALARMS];
 

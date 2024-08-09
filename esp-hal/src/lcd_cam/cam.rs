@@ -64,9 +64,6 @@
 //! # }
 //! ```
 
-use core::mem::size_of;
-
-use embedded_dma::WriteBuffer;
 use fugit::HertzU32;
 
 use crate::{
@@ -83,6 +80,7 @@ use crate::{
         DmaTransferRxCircular,
         LcdCamPeripheral,
         RxPrivate,
+        WriteBuffer,
     },
     gpio::{InputPin, InputSignal, OutputPin, OutputSignal},
     lcd_cam::{cam::private::RxPins, private::calculate_clkm, BitOrder, ByteOrder},
@@ -136,7 +134,7 @@ where
         descriptors: &'static mut [DmaDescriptor],
         _pins: P,
         frequency: HertzU32,
-        clocks: &Clocks,
+        clocks: &Clocks<'d>,
     ) -> Self {
         let lcd_cam = cam.lcd_cam;
 
@@ -380,11 +378,10 @@ impl<'d, CH: DmaChannel> Camera<'d, CH> {
     ) -> Result<(), DmaError> {
         let (ptr, len) = unsafe { buf.write_buffer() };
 
-        assert_eq!(self.bus_width, size_of::<RXBUF::Word>());
+        assert!(len % self.bus_width == 0);
 
         unsafe {
-            self.rx_chain
-                .fill_for_rx(circular, ptr as _, len * size_of::<RXBUF::Word>())?;
+            self.rx_chain.fill_for_rx(circular, ptr as _, len)?;
             self.rx_channel
                 .prepare_transfer_without_start(DmaPeripheral::LcdCam, &self.rx_chain)?;
         }
@@ -394,7 +391,7 @@ impl<'d, CH: DmaChannel> Camera<'d, CH> {
     pub fn read_dma<'t, RXBUF: WriteBuffer>(
         &'t mut self,
         buf: &'t mut RXBUF,
-    ) -> Result<DmaTransferRx<Self>, DmaError> {
+    ) -> Result<DmaTransferRx<'_, Self>, DmaError> {
         self.reset_unit_and_fifo();
         // Start DMA to receive incoming transfer.
         self.start_dma(false, buf)?;
@@ -406,7 +403,7 @@ impl<'d, CH: DmaChannel> Camera<'d, CH> {
     pub fn read_dma_circular<'t, RXBUF: WriteBuffer>(
         &'t mut self,
         buf: &'t mut RXBUF,
-    ) -> Result<DmaTransferRxCircular<Self>, DmaError> {
+    ) -> Result<DmaTransferRxCircular<'_, Self>, DmaError> {
         self.reset_unit_and_fifo();
         // Start DMA to receive incoming transfer.
         self.start_dma(true, buf)?;

@@ -44,7 +44,8 @@ async fn main(_spawner: Spawner) {
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
     let systimer = SystemTimer::new(peripherals.SYSTIMER);
-    let timers = [OneShotTimer::new(systimer.alarm0.into())];
+    let alarm0: ErasedTimer = systimer.alarm0.into();
+    let timers = [OneShotTimer::new(alarm0)];
     let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
     esp_hal_embassy::init(&clocks, timers);
 
@@ -74,7 +75,11 @@ async fn main(_spawner: Spawner) {
     let buffer = rx_buffer;
     loop {
         parl_io_rx.read_dma_async(buffer).await.unwrap();
-        println!("Received: {:02x?} ...", &buffer[..30]);
+        println!(
+            "Received: {:02x?} ... {:02x?}",
+            &buffer[..30],
+            &buffer[(buffer.len() - 30)..]
+        );
 
         Timer::after(Duration::from_millis(500)).await;
     }
