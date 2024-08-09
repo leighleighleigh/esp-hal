@@ -25,7 +25,7 @@ cfg_if::cfg_if! {
 }
 
 #[entry]
-fn main(mut gpio1: Output<1>) -> ! {
+fn main(mut gpio21: Output<21>) -> ! {
     let mut i: u32 = 0;
 
     let ptr = ADDRESS as *mut u32;
@@ -36,10 +36,10 @@ fn main(mut gpio1: Output<1>) -> ! {
             ptr.write_volatile(i);
         }
 
-        gpio1.set_high().unwrap();
+        gpio21.set_high().unwrap();
         Delay.delay_ms(500);
 
-        gpio1.set_low().unwrap();
+        gpio21.set_low().unwrap();
         Delay.delay_ms(500);
     }
 }
