@@ -309,8 +309,7 @@ pub fn receive_queued(queue: *mut c_void, item: *mut c_void, block_time_tick: u3
     }
 }
 
-// Implements queue_msg_waiting (equivalent to FreeRTOS's uxQueueMessagesWaiting)
-// Returns the number of messages waiting in the queue
+// Implements queue_msg_waiting, equivalent to FreeRTOS's uxQueueMessagesWaiting
 pub fn count_messages_queued(queue: *mut c_void) -> u32 {
     trace!(
         "queue_msg_waiting {:?}",
