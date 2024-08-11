@@ -21,7 +21,7 @@ use crate::{
             create_wifi_queue,
             lock_mutex,
             receive_queued,
-            count_messages_queued,
+            number_of_messages_in_queue,
             send_queued,
             str_from_c,
             thread_sem_get,
@@ -532,7 +532,7 @@ pub unsafe extern "C" fn queue_recv(
 ///
 /// *************************************************************************
 pub unsafe extern "C" fn queue_msg_waiting(queue: *mut crate::binary::c_types::c_void) -> u32 {
-    count_messages_queued(queue)
+    number_of_messages_in_queue(queue)
 }
 
 /// **************************************************************************
