@@ -3,7 +3,7 @@
 //!
 //! Currently hard-coded for 2.4GHz Channel 1.
 
-//% FEATURES: esp-wifi-sys esp-wifi esp-wifi/wifi-default esp-wifi/wifi esp-wifi/utils esp-wifi/esp-now
+//% FEATURES: esp-wifi-sys esp-wifi esp-wifi/wifi-default esp-wifi/wifi esp-wifi/utils esp-wifi/esp-now esp-wifi/phy-enable-usb
 //% CHIPS: esp32 esp32s2 esp32s3 esp32c2 esp32c3 esp32c6
 
 #![no_std]
