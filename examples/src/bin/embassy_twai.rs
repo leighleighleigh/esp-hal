@@ -25,28 +25,16 @@ use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
 use embedded_can::{Frame, Id};
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
     gpio::Io,
     interrupt,
-    peripherals::{self, Peripherals, TWAI0},
-    system::SystemControl,
-    timer::{timg::TimerGroup, ErasedTimer, OneShotTimer},
-    twai::{self, EspTwaiFrame, TwaiRx, TwaiTx},
+    peripherals::{self, TWAI0},
+    timer::timg::TimerGroup,
+    twai::{self, EspTwaiFrame, TwaiMode, TwaiRx, TwaiTx},
 };
 use esp_println::println;
 use static_cell::StaticCell;
 
 type TwaiOutbox = Channel<NoopRawMutex, EspTwaiFrame, 16>;
-
-// When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
-macro_rules! mk_static {
-    ($t:ty,$val:expr) => {{
-        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
-        #[deny(unused_attributes)]
-        let x = STATIC_CELL.uninit().write(($val));
-        x
-    }};
-}
 
 #[embassy_executor::task]
 async fn receiver(
@@ -94,15 +82,10 @@ async fn transmitter(
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
-    let peripherals = Peripherals::take();
-    let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+    let (peripherals, clocks) = esp_hal::init(esp_hal::Config::default());
 
     let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let timer0: ErasedTimer = timg0.timer0.into();
-    let timers = [OneShotTimer::new(timer0)];
-    let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
-    esp_hal_embassy::init(&clocks, timers);
+    esp_hal_embassy::init(&clocks, timg0.timer0);
 
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
@@ -122,6 +105,7 @@ async fn main(spawner: Spawner) {
         can_rx_pin,
         &clocks,
         CAN_BAUDRATE,
+        TwaiMode::Normal,
     );
 
     // Partially filter the incoming messages to reduce overhead of receiving

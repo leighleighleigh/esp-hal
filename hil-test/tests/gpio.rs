@@ -5,6 +5,7 @@
 //! GPIO3
 
 //% CHIPS: esp32 esp32c2 esp32c3 esp32c6 esp32h2 esp32s2 esp32s3
+//% FEATURES: generic-queue
 
 #![no_std]
 #![no_main]
@@ -12,27 +13,14 @@
 use core::cell::RefCell;
 
 use critical_section::Mutex;
-use defmt_rtt as _;
-use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
     delay::Delay,
-    gpio::{Gpio2, Gpio3, GpioPin, Input, Io, Level, Output, Pull},
+    gpio::{AnyPin, Gpio2, Gpio3, GpioPin, Input, Io, Level, Output, Pull},
     macros::handler,
-    peripherals::Peripherals,
-    system::SystemControl,
-    timer::{timg::TimerGroup, ErasedTimer, OneShotTimer},
+    timer::timg::TimerGroup,
     InterruptConfigurable,
 };
-
-macro_rules! mk_static {
-    ($t:ty,$val:expr) => {{
-        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
-        #[deny(unused_attributes)]
-        let x = STATIC_CELL.uninit().write(($val));
-        x
-    }};
-}
+use hil_test as _;
 
 static COUNTER: Mutex<RefCell<u32>> = Mutex::new(RefCell::new(0));
 static INPUT_PIN: Mutex<RefCell<Option<Input<'static, Gpio2>>>> = Mutex::new(RefCell::new(None));
@@ -41,31 +29,6 @@ struct Context<'d> {
     io2: Input<'d, Gpio2>,
     io3: Output<'d, Gpio3>,
     delay: Delay,
-}
-
-impl<'d> Context<'d> {
-    pub fn init() -> Self {
-        let peripherals = Peripherals::take();
-        let system = SystemControl::new(peripherals.SYSTEM);
-        let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-
-        let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
-        io.set_interrupt_handler(interrupt_handler);
-
-        let delay = Delay::new(&clocks);
-
-        let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-        let timer0: ErasedTimer = timg0.timer0.into();
-        let timers = [OneShotTimer::new(timer0)];
-        let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
-        esp_hal_embassy::init(&clocks, timers);
-
-        Context {
-            io2: Input::new(io.pins.gpio2, Pull::Down),
-            io3: Output::new(io.pins.gpio3, Level::Low),
-            delay,
-        }
-    }
 }
 
 #[handler]
@@ -91,10 +54,21 @@ mod tests {
 
     #[init]
     fn init() -> Context<'static> {
-        let mut ctx = Context::init();
-        // make sure tests don't interfere with each other
-        ctx.io3.set_low();
-        ctx
+        let (peripherals, clocks) = esp_hal::init(esp_hal::Config::default());
+
+        let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+        io.set_interrupt_handler(interrupt_handler);
+
+        let delay = Delay::new(&clocks);
+
+        let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
+        esp_hal_embassy::init(&clocks, timg0.timer0);
+
+        Context {
+            io2: Input::new(io.pins.gpio2, Pull::Down),
+            io3: Output::new(io.pins.gpio3, Level::Low),
+            delay,
+        }
     }
 
     #[test]
@@ -278,5 +252,33 @@ mod tests {
 
         assert_eq!(io2.is_low(), true);
         assert_eq!(io3.is_set_low(), true);
+    }
+
+    // Tests touch pin (GPIO2) as AnyPin and Output
+    // https://github.com/esp-rs/esp-hal/issues/1943
+    #[test]
+    fn test_gpio_touch_anypin_output() {
+        let any_pin2 = AnyPin::new(unsafe { GpioPin::<2>::steal() });
+        let any_pin3 = AnyPin::new(unsafe { GpioPin::<3>::steal() });
+
+        let out_pin = Output::new(any_pin2, Level::High);
+        let in_pin = Input::new(any_pin3, Pull::Down);
+
+        assert_eq!(out_pin.is_set_high(), true);
+        assert_eq!(in_pin.is_high(), true);
+    }
+
+    // Tests touch pin (GPIO2) as AnyPin and Input
+    // https://github.com/esp-rs/esp-hal/issues/1943
+    #[test]
+    fn test_gpio_touch_anypin_input() {
+        let any_pin2 = AnyPin::new(unsafe { GpioPin::<2>::steal() });
+        let any_pin3 = AnyPin::new(unsafe { GpioPin::<3>::steal() });
+
+        let out_pin = Output::new(any_pin3, Level::Low);
+        let in_pin = Input::new(any_pin2, Pull::Down);
+
+        assert_eq!(out_pin.is_set_high(), false);
+        assert_eq!(in_pin.is_high(), false);
     }
 }

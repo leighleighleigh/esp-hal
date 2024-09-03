@@ -23,8 +23,6 @@
 //!
 //! [Parallel IO TX]: https://github.com/esp-rs/esp-hal/blob/main/examples/src/bin/parl_io_tx.rs
 
-#![warn(missing_docs)]
-
 use core::marker::PhantomData;
 
 use enumset::{EnumSet, EnumSetType};
@@ -1098,14 +1096,17 @@ fn internal_clear_interrupts(interrupts: EnumSet<ParlIoInterrupt>) {
 /// Parallel IO in full duplex mode
 ///
 /// Full duplex mode might limit the maximum possible bit width.
-#[allow(missing_docs)]
 pub struct ParlIoFullDuplex<'d, CH, DM>
 where
     CH: DmaChannel,
     CH::P: ParlIoPeripheral,
     DM: Mode,
 {
+    /// The transmitter (TX) channel responsible for handling DMA transfers in
+    /// the parallel I/O full-duplex operation.
     pub tx: TxCreatorFullDuplex<'d, CH, DM>,
+    /// The receiver (RX) channel responsible for handling DMA transfers in the
+    /// parallel I/O full-duplex operation.
     pub rx: RxCreatorFullDuplex<'d, CH, DM>,
 }
 
@@ -1193,13 +1194,14 @@ where
 }
 
 /// Parallel IO in half duplex / TX only mode
-#[allow(missing_docs)]
 pub struct ParlIoTxOnly<'d, CH, DM>
 where
     CH: DmaChannel,
     CH::P: ParlIoPeripheral,
     DM: Mode,
 {
+    /// The transmitter (TX) channel responsible for handling DMA transfers in
+    /// the parallel I/O operation.
     pub tx: TxCreator<'d, CH, DM>,
 }
 
@@ -1281,13 +1283,14 @@ where
 }
 
 /// Parallel IO in half duplex / RX only mode
-#[allow(missing_docs)]
 pub struct ParlIoRxOnly<'d, CH, DM>
 where
     CH: DmaChannel,
     CH::P: ParlIoPeripheral,
     DM: Mode,
 {
+    /// The receiver (RX) channel responsible for handling DMA transfers in the
+    /// parallel I/O operation.
     pub rx: RxCreator<'d, CH, DM>,
 }
 
@@ -1381,6 +1384,7 @@ where
         return Err(Error::UnreachableClockRate);
     }
 
+    PeripheralClockControl::reset(crate::system::Peripheral::ParlIo);
     PeripheralClockControl::enable(crate::system::Peripheral::ParlIo);
 
     let pcr = unsafe { &*crate::peripherals::PCR::PTR };
@@ -1665,12 +1669,13 @@ pub mod asynch {
 
     use super::{private::Instance, Error, ParlIoRx, ParlIoTx, MAX_DMA_SIZE};
     use crate::{
-        dma::{asynch::DmaRxFuture, DmaChannel, ParlIoPeripheral},
+        dma::{asynch::DmaRxFuture, DmaChannel, ParlIoPeripheral, ReadBuffer, WriteBuffer},
         peripherals::Interrupt,
     };
 
     static TX_WAKER: AtomicWaker = AtomicWaker::new();
 
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
     struct TxDoneFuture {}
 
     impl TxDoneFuture {
@@ -1727,8 +1732,11 @@ pub mod asynch {
         /// Perform a DMA write.
         ///
         /// The maximum amount of data to be sent is 32736 bytes.
-        pub async fn write_dma_async(&mut self, words: &mut [u8]) -> Result<(), Error> {
-            let (ptr, len) = (words.as_ptr(), words.len());
+        pub async fn write_dma_async<'t, TXBUF>(&mut self, words: &'t TXBUF) -> Result<(), Error>
+        where
+            TXBUF: ReadBuffer,
+        {
+            let (ptr, len) = unsafe { words.read_buffer() };
 
             if len > MAX_DMA_SIZE {
                 return Err(Error::MaxDmaTransferSizeExceeded);
@@ -1750,8 +1758,14 @@ pub mod asynch {
         /// Perform a DMA write.
         ///
         /// The maximum amount of data to be sent is 32736 bytes.
-        pub async fn read_dma_async(&mut self, words: &mut [u8]) -> Result<(), Error> {
-            let (ptr, len) = (words.as_mut_ptr(), words.len());
+        pub async fn read_dma_async<'t, RXBUF>(
+            &'t mut self,
+            words: &'t mut RXBUF,
+        ) -> Result<(), Error>
+        where
+            RXBUF: WriteBuffer,
+        {
+            let (ptr, len) = unsafe { words.write_buffer() };
 
             if !Instance::is_suc_eof_generated_externally() && len > MAX_DMA_SIZE {
                 return Err(Error::MaxDmaTransferSizeExceeded);

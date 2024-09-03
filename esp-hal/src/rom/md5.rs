@@ -25,7 +25,9 @@
 //! than it would be if you included an MD5 implementation in your project.
 //!
 //! ## Examples
-//! ## Compute a Full Digest From a Single Buffer
+//!
+//! ### Compute a Full Digest From a Single Buffer
+//!
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! # use esp_hal::rom::md5;
@@ -40,7 +42,8 @@
 //! writeln!(uart0, "{}", d);
 //! # }
 //! ```
-//! ## Compute a Digest Over Multiple Buffers
+//! 
+//! ### Compute a Digest Over Multiple Buffers
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! # use esp_hal::rom::md5;
@@ -52,6 +55,7 @@
 //! # let mut uart0 = Uart::new(peripherals.UART0, &clocks, io.pins.gpio1, io.pins.gpio2).unwrap();
 //! # let data0 = "Dummy";
 //! # let data1 = "Dummy";
+//! #
 //! let mut ctx = md5::Context::new();
 //! ctx.consume(&data0);
 //! ctx.consume(&data1);

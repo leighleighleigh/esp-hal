@@ -10,39 +10,53 @@
 #![no_std]
 #![no_main]
 
-use defmt_rtt as _;
-use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
     delay::Delay,
     dma::{Dma, DmaPriority},
     dma_buffers,
     gpio::Io,
     i2s::{DataFormat, I2s, I2sReadDma, I2sWriteDma, Standard},
     peripheral::Peripheral,
-    peripherals::Peripherals,
     prelude::*,
-    system::SystemControl,
 };
+use hil_test as _;
 
-// choose values which DON'T restart on every descriptor buffer's start
-const ADD: u8 = 5;
-const CUT_OFF: u8 = 113;
+#[derive(Clone)]
+struct SampleSource {
+    i: u8,
+}
+
+impl SampleSource {
+    // choose values which DON'T restart on every descriptor buffer's start
+    const ADD: u8 = 5;
+    const CUT_OFF: u8 = 113;
+
+    fn new() -> Self {
+        Self { i: 0 }
+    }
+}
+
+impl Iterator for SampleSource {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let i = self.i;
+        self.i = (i + Self::ADD) % Self::CUT_OFF;
+        Some(i)
+    }
+}
 
 #[cfg(test)]
 #[embedded_test::tests]
 mod tests {
-
     use super::*;
-
-    #[init]
-    fn init() {}
 
     #[test]
     fn test_i2s_loopback() {
-        let peripherals = Peripherals::take();
-        let system = SystemControl::new(peripherals.SYSTEM);
-        let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+        let (peripherals, clocks) = esp_hal::init(esp_hal::Config::default());
+
+        let peripherals = peripherals;
+        let clocks = clocks;
 
         let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
@@ -92,13 +106,9 @@ mod tests {
             i2s.rx_conf().modify(|_, w| w.rx_update().set_bit());
         }
 
-        let mut iteration = 0;
-        let mut failed = false;
-        let mut check_i: u8 = 0;
-        let mut i = 0;
+        let mut samples = SampleSource::new();
         for b in tx_buffer.iter_mut() {
-            *b = i;
-            i = (i + ADD) % CUT_OFF;
+            *b = samples.next().unwrap();
         }
 
         let mut rcv = [0u8; 11000];
@@ -113,14 +123,16 @@ mod tests {
 
         let mut tx_transfer = i2s_tx.write_dma_circular(&tx_buffer).unwrap();
 
-        'outer: loop {
+        let mut iteration = 0;
+        let mut sample_idx = 0;
+        let mut check_samples = SampleSource::new();
+        loop {
             let tx_avail = tx_transfer.available();
 
             // make sure there are more than one descriptor buffers ready to push
             if tx_avail > 5000 {
                 for b in &mut filler[0..tx_avail].iter_mut() {
-                    *b = i;
-                    i = (i + ADD) % CUT_OFF;
+                    *b = samples.next().unwrap();
                 }
                 tx_transfer.push(&filler[0..tx_avail]).unwrap();
             }
@@ -147,11 +159,13 @@ mod tests {
                 assert!(len > 0);
 
                 for &b in &rcv[..len] {
-                    if b != check_i {
-                        failed = true;
-                        break 'outer;
-                    }
-                    check_i = (check_i + ADD) % CUT_OFF;
+                    let expected = check_samples.next().unwrap();
+                    assert_eq!(
+                        b, expected,
+                        "Sample #{} does not match ({} != {})",
+                        sample_idx, b, expected
+                    );
+                    sample_idx += 1;
                 }
 
                 iteration += 1;
@@ -167,7 +181,5 @@ mod tests {
                 break;
             }
         }
-
-        assert!(!failed);
     }
 }

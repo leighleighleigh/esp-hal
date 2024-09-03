@@ -5,8 +5,6 @@
 #![no_std]
 #![no_main]
 
-use defmt_rtt as _;
-use esp_backtrace as _;
 use esp_hal::{
     aes::{
         dma::{CipherMode, WithDmaAes},
@@ -16,7 +14,9 @@ use esp_hal::{
     dma::{Dma, DmaPriority},
     dma_buffers,
     peripherals::Peripherals,
+    prelude::*,
 };
+use hil_test as _;
 
 const DMA_BUFFER_SIZE: usize = 16;
 
@@ -28,12 +28,13 @@ mod tests {
     use super::*;
 
     #[init]
-    fn init() {}
+    fn init() -> Peripherals {
+        let (peripherals, _clocks) = esp_hal::init(esp_hal::Config::default());
+        peripherals
+    }
 
     #[test]
-    fn test_aes_128_dma_encryption() {
-        let peripherals = Peripherals::take();
-
+    fn test_aes_128_dma_encryption(peripherals: Peripherals) {
         let dma = Dma::new(peripherals.DMA);
         let dma_channel = dma.channel0;
 
@@ -45,11 +46,11 @@ mod tests {
             rx_descriptors,
         );
 
-        let keytext = "SUp4SeCp@sSw0rd".as_bytes();
+        let keytext = b"SUp4SeCp@sSw0rd";
         let mut keybuf = [0_u8; 16];
         keybuf[..keytext.len()].copy_from_slice(keytext);
 
-        let plaintext = "message".as_bytes();
+        let plaintext = b"message";
         input[..plaintext.len()].copy_from_slice(plaintext);
 
         let encrypted_message = [
@@ -75,9 +76,7 @@ mod tests {
     }
 
     #[test]
-    fn test_aes_128_dma_decryption() {
-        let peripherals = Peripherals::take();
-
+    fn test_aes_128_dma_decryption(peripherals: Peripherals) {
         let dma = Dma::new(peripherals.DMA);
         let dma_channel = dma.channel0;
 
@@ -89,11 +88,11 @@ mod tests {
             rx_descriptors,
         );
 
-        let keytext = "SUp4SeCp@sSw0rd".as_bytes();
+        let keytext = b"SUp4SeCp@sSw0rd";
         let mut keybuf = [0_u8; 16];
         keybuf[..keytext.len()].copy_from_slice(keytext);
 
-        let plaintext = "message".as_bytes();
+        let plaintext = b"message";
         let encrypted_message = [
             0xb3, 0xc8, 0xd2, 0x3b, 0xa7, 0x36, 0x5f, 0x18, 0x61, 0x70, 0x0, 0x3e, 0xd9, 0x3a,
             0x31, 0x96,
@@ -118,9 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn test_aes_256_dma_encryption() {
-        let peripherals = Peripherals::take();
-
+    fn test_aes_256_dma_encryption(peripherals: Peripherals) {
         let dma = Dma::new(peripherals.DMA);
         let dma_channel = dma.channel0;
 
@@ -132,11 +129,11 @@ mod tests {
             rx_descriptors,
         );
 
-        let keytext = "SUp4SeCp@sSw0rd".as_bytes();
+        let keytext = b"SUp4SeCp@sSw0rd";
         let mut keybuf = [0_u8; 16];
         keybuf[..keytext.len()].copy_from_slice(keytext);
 
-        let plaintext = "message".as_bytes();
+        let plaintext = b"message";
         input[..plaintext.len()].copy_from_slice(plaintext);
 
         let encrypted_message = [
@@ -162,9 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn test_aes_256_dma_decryption() {
-        let peripherals = Peripherals::take();
-
+    fn test_aes_256_dma_decryption(peripherals: Peripherals) {
         let dma = Dma::new(peripherals.DMA);
         let dma_channel = dma.channel0;
 
@@ -176,11 +171,11 @@ mod tests {
             rx_descriptors,
         );
 
-        let keytext = "SUp4SeCp@sSw0rd".as_bytes();
+        let keytext = b"SUp4SeCp@sSw0rd";
         let mut keybuf = [0_u8; 16];
         keybuf[..keytext.len()].copy_from_slice(keytext);
 
-        let plaintext = "message".as_bytes();
+        let plaintext = b"message";
         let encrypted_message = [
             0x0, 0x63, 0x3f, 0x2, 0xa4, 0x53, 0x9, 0x72, 0x20, 0x6d, 0xc9, 0x8, 0x7c, 0xe5, 0xfd,
             0xc,

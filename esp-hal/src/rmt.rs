@@ -18,24 +18,25 @@
 //!   the input signal
 //!
 //! ### Channels
+//!
 //! There are
 #![cfg_attr(
     esp32,
-    doc = "8 channels, each of them can be either receiver or transmitter"
+    doc = "8 channels, each of them can be either receiver or transmitter."
 )]
 #![cfg_attr(
     esp32s2,
-    doc = "4 channels, each of them can be either receiver or transmitter"
+    doc = "4 channels, each of them can be either receiver or transmitter."
 )]
 #![cfg_attr(
     esp32s3,
-    doc = "8 channels, `Channel<0>`-`Channel<3>` hardcoded for transmitting signals and `Channel<4>`-`Channel<7>` hardcoded for receiving signals"
+    doc = "8 channels, `Channel<0>`-`Channel<3>` hardcoded for transmitting signals and `Channel<4>`-`Channel<7>` hardcoded for receiving signals."
 )]
 #![cfg_attr(
     any(esp32c3, esp32c6, esp32h2),
     doc = "4 channels, `Channel<0>` and `Channel<1>` hardcoded for transmitting signals and `Channel<2>` and `Channel<3>` hardcoded for receiving signals."
 )]
-#![doc = "  "]
+#![doc = ""]
 //! For more information, please refer to the
 #![doc = concat!("[ESP-IDF documentation](https://docs.espressif.com/projects/esp-idf/en/latest/", crate::soc::chip!(), "/api-reference/peripherals/rmt.html)")]
 //! ## Configuration
@@ -44,8 +45,10 @@
 //! channels are indicated by n which is used as a placeholder for the channel
 //! number, and by m for RX channels.
 //!
-//! ## Examples
+//! ## Example
+//!
 //! ### Initialization
+//!
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! # use esp_hal::peripherals::Peripherals;
@@ -54,7 +57,6 @@
 //! # use esp_hal::gpio::Io;
 //! # use esp_hal::clock::ClockControl;
 //! # use crate::esp_hal::rmt::TxChannelCreator;
-//! # use crate::esp_hal::prelude::_fugit_RateExtU32;
 //! # let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 #![cfg_attr(esp32h2, doc = "let freq = 32.MHz();")]
 #![cfg_attr(not(esp32h2), doc = "let freq = 80.MHz();")]
@@ -76,10 +78,8 @@
 //!     .unwrap();
 //! # }
 //! ```
-//! (on ESP32 and ESP32-S2 you cannot specify a base frequency other than 80
-//! MHz)
-
-#![warn(missing_docs)]
+//! 
+//! > Note: on ESP32 and ESP32-S2 you cannot specify a base frequency other than 80 MHz
 
 use core::marker::PhantomData;
 
@@ -227,13 +227,16 @@ where
             return Err(Error::UnreachableTargetFrequency);
         }
 
+        PeripheralClockControl::reset(crate::system::Peripheral::Rmt);
         PeripheralClockControl::enable(crate::system::Peripheral::Rmt);
 
-        #[cfg(not(any(esp32, esp32s2)))]
-        me.configure_clock(frequency, _clocks)?;
-
-        #[cfg(any(esp32, esp32s2))]
-        self::chip_specific::configure_clock();
+        cfg_if::cfg_if! {
+            if #[cfg(any(esp32, esp32s2))] {
+                self::chip_specific::configure_clock();
+            } else {
+                me.configure_clock(frequency, _clocks)?;
+            }
+        }
 
         Ok(me)
     }
@@ -643,15 +646,18 @@ mod impl_for_chip {
     use crate::peripheral::{Peripheral, PeripheralRef};
 
     /// RMT Instance
-    #[allow(missing_docs)]
     pub struct Rmt<'d, M>
     where
         M: crate::Mode,
     {
         _peripheral: PeripheralRef<'d, crate::peripherals::RMT>,
+        /// RMT Channel 0.
         pub channel0: ChannelCreator<M, 0>,
+        /// RMT Channel 1.
         pub channel1: ChannelCreator<M, 1>,
+        /// RMT Channel 2.
         pub channel2: ChannelCreator<M, 2>,
+        /// RMT Channel 3.
         pub channel3: ChannelCreator<M, 3>,
         phantom: PhantomData<M>,
     }
@@ -711,19 +717,26 @@ mod impl_for_chip {
     use crate::peripheral::{Peripheral, PeripheralRef};
 
     /// RMT Instance
-    #[allow(missing_docs)]
     pub struct Rmt<'d, M>
     where
         M: crate::Mode,
     {
         _peripheral: PeripheralRef<'d, crate::peripherals::RMT>,
+        /// RMT Channel 0.
         pub channel0: ChannelCreator<M, 0>,
+        /// RMT Channel 1.
         pub channel1: ChannelCreator<M, 1>,
+        /// RMT Channel 2.
         pub channel2: ChannelCreator<M, 2>,
+        /// RMT Channel 3.
         pub channel3: ChannelCreator<M, 3>,
+        /// RMT Channel 4.
         pub channel4: ChannelCreator<M, 4>,
+        /// RMT Channel 5.
         pub channel5: ChannelCreator<M, 5>,
+        /// RMT Channel 6.
         pub channel6: ChannelCreator<M, 6>,
+        /// RMT Channel 7.
         pub channel7: ChannelCreator<M, 7>,
         phantom: PhantomData<M>,
     }
@@ -819,15 +832,18 @@ mod impl_for_chip {
     use crate::peripheral::{Peripheral, PeripheralRef};
 
     /// RMT Instance
-    #[allow(missing_docs)]
     pub struct Rmt<'d, M>
     where
         M: crate::Mode,
     {
         _peripheral: PeripheralRef<'d, crate::peripherals::RMT>,
+        /// RMT Channel 0.
         pub channel0: ChannelCreator<M, 0>,
+        /// RMT Channel 1.
         pub channel1: ChannelCreator<M, 1>,
+        /// RMT Channel 2.
         pub channel2: ChannelCreator<M, 2>,
+        /// RMT Channel 3.
         pub channel3: ChannelCreator<M, 3>,
         phantom: PhantomData<M>,
     }
@@ -895,19 +911,26 @@ mod impl_for_chip {
     use crate::peripheral::{Peripheral, PeripheralRef};
 
     /// RMT Instance
-    #[allow(missing_docs)]
     pub struct Rmt<'d, M>
     where
         M: crate::Mode,
     {
         _peripheral: PeripheralRef<'d, crate::peripherals::RMT>,
+        /// RMT Channel 0.
         pub channel0: ChannelCreator<M, 0>,
+        /// RMT Channel 1.
         pub channel1: ChannelCreator<M, 1>,
+        /// RMT Channel 2.
         pub channel2: ChannelCreator<M, 2>,
+        /// RMT Channel 3.
         pub channel3: ChannelCreator<M, 3>,
+        /// RMT Channel 4.
         pub channel4: ChannelCreator<M, 4>,
+        /// RMT Channel 5.
         pub channel5: ChannelCreator<M, 5>,
+        /// RMT Channel 6.
         pub channel6: ChannelCreator<M, 6>,
+        /// RMT Channel 7.
         pub channel7: ChannelCreator<M, 7>,
         phantom: PhantomData<M>,
     }
@@ -1130,6 +1153,7 @@ pub mod asynch {
     const INIT: AtomicWaker = AtomicWaker::new();
     static WAKER: [AtomicWaker; NUM_CHANNELS] = [INIT; NUM_CHANNELS];
 
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub(crate) struct RmtTxFuture<T>
     where
         T: TxChannelAsync,
@@ -1193,6 +1217,7 @@ pub mod asynch {
         }
     }
 
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub(crate) struct RmtRxFuture<T>
     where
         T: RxChannelAsync,

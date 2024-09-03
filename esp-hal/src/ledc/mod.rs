@@ -1,6 +1,7 @@
 //! # LED Controller (LEDC)
 //!
 //! ## Overview
+//!
 //! The LEDC peripheral is primarily designed to control the intensity of LEDs,
 //! although it can also be used to generate PWM signals for other purposes. It
 //! has multiple channels which can generate independent waveforms that can be
@@ -15,9 +16,12 @@
 //! supported chips.
 //!
 //! ## Examples
+//!
 //! ### Low Speed Channel
-//! The following will configure the Low Speed Channel0 to 24kHz output with
-//! 10% duty using the ABPClock
+//!
+//! The following example will configure the Low Speed Channel0 to 24kHz output
+//! with 10% duty using the ABPClock.
+//!
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! # use esp_hal::ledc::Ledc;
@@ -26,10 +30,6 @@
 //! # use esp_hal::ledc::LowSpeed;
 //! # use esp_hal::ledc::channel;
 //! # use esp_hal::gpio::Io;
-//! # use crate::esp_hal::prelude::_esp_hal_ledc_timer_TimerIFace;
-//! # use crate::esp_hal::prelude::_fugit_RateExtU32;
-//! # use crate::esp_hal::prelude::_esp_hal_ledc_channel_ChannelIFace;
-//!
 //! # let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 //! # let led = io.pins.gpio0;
 //!
@@ -77,6 +77,7 @@ pub mod timer;
 /// Global slow clock source
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum LSGlobalClkSource {
+    /// APB clock.
     APBClk,
 }
 
@@ -94,7 +95,9 @@ pub struct HighSpeed {}
 /// Used to specify LowSpeed Timer/Channel
 pub struct LowSpeed {}
 
+/// Trait representing the speed mode of a clock or peripheral.
 pub trait Speed {
+    /// Boolean constant indicating whether the speed is high-speed.
     const IS_HS: bool;
 }
 
@@ -114,6 +117,8 @@ impl<'d> Ledc<'d> {
         clock_control_config: &'d Clocks<'d>,
     ) -> Self {
         crate::into_ref!(_instance);
+
+        PeripheralClockControl::reset(PeripheralEnable::Ledc);
         PeripheralClockControl::enable(PeripheralEnable::Ledc);
 
         let ledc = unsafe { &*crate::peripherals::LEDC::ptr() };

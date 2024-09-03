@@ -11,37 +11,19 @@
 #![no_std]
 #![no_main]
 
-use defmt_rtt as _;
-use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
     gpio::Io,
-    peripherals::{Peripherals, UART0, UART1},
+    peripherals::{UART0, UART1},
     prelude::*,
-    system::SystemControl,
     uart::{UartRx, UartTx},
     Blocking,
 };
+use hil_test as _;
 use nb::block;
 
 struct Context {
     tx: UartTx<'static, UART0, Blocking>,
     rx: UartRx<'static, UART1, Blocking>,
-}
-
-impl Context {
-    pub fn init() -> Self {
-        let peripherals = Peripherals::take();
-        let system = SystemControl::new(peripherals.SYSTEM);
-        let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-
-        let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
-
-        let tx = UartTx::new(peripherals.UART0, &clocks, io.pins.gpio2).unwrap();
-        let rx = UartRx::new(peripherals.UART1, &clocks, io.pins.gpio3).unwrap();
-
-        Context { tx, rx }
-    }
 }
 
 #[cfg(test)]
@@ -53,7 +35,14 @@ mod tests {
 
     #[init]
     fn init() -> Context {
-        Context::init()
+        let (peripherals, clocks) = esp_hal::init(esp_hal::Config::default());
+
+        let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+
+        let tx = UartTx::new(peripherals.UART0, &clocks, io.pins.gpio2).unwrap();
+        let rx = UartRx::new(peripherals.UART1, &clocks, io.pins.gpio3).unwrap();
+
+        Context { tx, rx }
     }
 
     #[test]

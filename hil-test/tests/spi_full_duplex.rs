@@ -13,27 +13,28 @@
 #![no_std]
 #![no_main]
 
-use defmt_rtt as _;
 use embedded_hal::spi::SpiBus;
-use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
     gpio::Io,
-    peripherals::Peripherals,
     prelude::*,
     spi::{master::Spi, FullDuplexMode, SpiMode},
-    system::SystemControl,
 };
+use hil_test as _;
 
 struct Context {
     spi: Spi<'static, esp_hal::peripherals::SPI2, FullDuplexMode>,
 }
 
-impl Context {
-    pub fn init() -> Self {
-        let peripherals = Peripherals::take();
-        let system = SystemControl::new(peripherals.SYSTEM);
-        let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+#[cfg(test)]
+#[embedded_test::tests]
+mod tests {
+    use defmt::assert_eq;
+
+    use super::*;
+
+    #[init]
+    fn init() -> Context {
+        let (peripherals, clocks) = esp_hal::init(esp_hal::Config::default());
 
         let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
         let sclk = io.pins.gpio0;
@@ -49,19 +50,6 @@ impl Context {
         );
 
         Context { spi }
-    }
-}
-
-#[cfg(test)]
-#[embedded_test::tests]
-mod tests {
-    use defmt::assert_eq;
-
-    use super::*;
-
-    #[init]
-    fn init() -> Context {
-        Context::init()
     }
 
     #[test]

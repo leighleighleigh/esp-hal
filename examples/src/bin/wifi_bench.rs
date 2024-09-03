@@ -15,15 +15,7 @@
 
 use embedded_io::*;
 use esp_backtrace as _;
-use esp_hal::{
-    clock::ClockControl,
-    delay::Delay,
-    peripherals::Peripherals,
-    prelude::*,
-    rng::Rng,
-    system::SystemControl,
-    timer::{timg::TimerGroup, ErasedTimer, PeriodicTimer},
-};
+use esp_hal::{delay::Delay, prelude::*, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
 use esp_wifi::{
     current_millis,
@@ -59,21 +51,19 @@ const UPLOAD_DOWNLOAD_PORT: u16 = 4323;
 #[entry]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
-
-    let peripherals = Peripherals::take();
-
-    let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::max(system.clock_control).freeze();
+    let (peripherals, clocks) = esp_hal::init({
+        let mut config = esp_hal::Config::default();
+        config.cpu_clock = CpuClock::max();
+        config
+    });
 
     let server_address: Ipv4Address = HOST_IP.parse().expect("Invalid HOST_IP address");
 
     let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let timer0: ErasedTimer = timg0.timer0.into();
-    let timer = PeriodicTimer::new(timer0);
 
     let init = initialize(
         EspWifiInitFor::Wifi,
-        timer,
+        timg0.timer0,
         Rng::new(peripherals.RNG),
         peripherals.RADIO_CLK,
         &clocks,

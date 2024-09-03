@@ -1,12 +1,14 @@
 //! # Advanced Encryption Standard (AES).
 //!
 //! ## Overview
+//!
 //! The AES accelerator is a hardware device that speeds up computation
 //! using AES algorithm significantly, compared to AES algorithms implemented
 //! solely in software.  The AES accelerator has two working modes, which are
 //! Typical AES and AES-DMA.
 //!
 //! ## Configuration
+//!
 //! The AES peripheral can be configured to encrypt or decrypt data using
 //! different encryption/decryption modes.
 //!
@@ -14,39 +16,44 @@
 //! cipher modes such as ECB, CBC, OFB, CTR, CFB8, and CFB128.
 //!
 //! ## Examples
-//! ### Encrypting and Decrypting a Message
+//!
+//! ### Encrypting and decrypting a message
+//!
 //! Simple example of encrypting and decrypting a message using AES-128:
+//!
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! # use esp_hal::aes::{Aes, Mode};
-//! # let keytext = "SUp4SeCp@sSw0rd".as_bytes();
-//! # let plaintext = "message".as_bytes();
+//! # let keytext = b"SUp4SeCp@sSw0rd";
+//! # let plaintext = b"message";
 //! # let mut keybuf = [0_u8; 16];
 //! # keybuf[..keytext.len()].copy_from_slice(keytext);
-//! let mut block_buf = [0_u8; 16];
-//! block_buf[..plaintext.len()].copy_from_slice(plaintext);
-//! let mut block = block_buf.clone();
+//! #
+//! let mut block = [0_u8; 16];
+//! block[..plaintext.len()].copy_from_slice(plaintext);
 //!
 //! let mut aes = Aes::new(peripherals.AES);
 //! aes.process(&mut block, Mode::Encryption128, keybuf);
-//! let hw_encrypted = block.clone();
+//!
+//! // The encryption happens in-place, so the ciphertext is in `block`
 //!
 //! aes.process(&mut block, Mode::Decryption128, keybuf);
-//! let hw_decrypted = block;
+//!
+//! // The decryption happens in-place, so the plaintext is in `block`
 //! # }
 //! ```
 //! 
 //! ### AES-DMA
+//!
 //! Visit the [AES-DMA] test for a more advanced example of using AES-DMA
 //! mode.
 //!
 //! [AES-DMA]: https://github.com/esp-rs/esp-hal/blob/main/hil-test/tests/aes_dma.rs
 //!
 //! ## Implementation State
+//!
 //! * AES-DMA mode is currently not supported on ESP32 and ESP32S2
 //! * AES-DMA Initialization Vector (IV) is currently not supported
-
-#![deny(missing_docs)]
 
 use crate::{
     peripheral::{Peripheral, PeripheralRef},
@@ -135,6 +142,10 @@ impl<'d> Aes<'d> {
     /// Constructs a new `Aes` instance.
     pub fn new(aes: impl Peripheral<P = AES> + 'd) -> Self {
         crate::into_ref!(aes);
+
+        crate::system::PeripheralClockControl::reset(crate::system::Peripheral::Aes);
+        crate::system::PeripheralClockControl::enable(crate::system::Peripheral::Aes);
+
         let mut ret = Self {
             aes,
             alignment_helper: AlignmentHelper::native_endianess(),

@@ -1,6 +1,7 @@
 //! # Motor Control Pulse Width Modulator (MCPWM)
 //!
 //! ## Overview
+//!
 //! The MCPWM peripheral is a versatile PWM generator, which contains various
 //! submodules to make it a key element in power electronic applications like
 //! motor control, digital power, and so on. Typically, the MCPWM peripheral can
@@ -13,6 +14,7 @@
 //! - Generate Space Vector PWM (SVPWM) signals for Field Oriented Control (FOC)
 //!
 //! ## Configuration
+//!
 //! * PWM Timers 0, 1 and 2
 //!     * Every PWM timer has a dedicated 8-bit clock prescaler.
 //!     * The 16-bit counter in the PWM timer can work in count-up mode,
@@ -40,14 +42,16 @@
 #![cfg_attr(esp32h2, doc = "Clock source is XTAL")]
 #![doc = ""]
 //! ## Examples
+//!
 //! ### Output a 20 kHz signal
-//! Uses timer0 and operator0 of the MCPWM0 peripheral to output a 50% duty
-//! signal at 20 kHz. The signal will be output to the pin assigned to `pin`.
+//!
+//! This example uses timer0 and operator0 of the MCPWM0 peripheral to output a
+//! 50% duty signal at 20 kHz. The signal will be output to the pin assigned to
+//! `pin`.
+//!
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
-//! # use esp_hal::{mcpwm, prelude::*};
-//! # use esp_hal::mcpwm::operator::{DeadTimeCfg, PWMStream};
-//! # use mcpwm::{operator::PwmPinConfig, timer::PwmWorkingMode, McPwm, PeripheralClockConfig};
+//! # use esp_hal::mcpwm::{operator::{DeadTimeCfg, PWMStream, PwmPinConfig}, timer::PwmWorkingMode, McPwm, PeripheralClockConfig};
 //! # use esp_hal::gpio::Io;
 //!
 //! # let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
@@ -82,8 +86,6 @@
 //! pwm_pin.set_timestamp(50);
 //! # }
 //! ```
-
-#![deny(missing_docs)]
 
 use core::{marker::PhantomData, ops::Deref};
 
@@ -132,6 +134,7 @@ impl<'d, PWM: PwmPeripheral> McPwm<'d, PWM> {
     ) -> Self {
         crate::into_ref!(peripheral);
 
+        PWM::reset();
         PWM::enable();
 
         #[cfg(not(esp32c6))]
@@ -202,14 +205,17 @@ impl<'a> PeripheralClockConfig<'a> {
     /// The peripheral clock frequency is calculated as:
     /// `peripheral_clock = input_clock / (prescaler + 1)`
     pub fn with_prescaler(clocks: &'a Clocks<'a>, prescaler: u8) -> Self {
-        #[cfg(esp32)]
-        let source_clock = clocks.pwm_clock;
-        #[cfg(esp32c6)]
-        let source_clock = clocks.crypto_clock;
-        #[cfg(esp32s3)]
-        let source_clock = clocks.crypto_pwm_clock;
-        #[cfg(esp32h2)]
-        let source_clock = clocks.xtal_clock;
+        cfg_if::cfg_if! {
+            if #[cfg(esp32)] {
+                let source_clock = clocks.pwm_clock;
+            } else if #[cfg(esp32c6)] {
+                let source_clock = clocks.crypto_clock;
+            } else if #[cfg(esp32s3)] {
+                let source_clock = clocks.crypto_pwm_clock;
+            } else if #[cfg(esp32h2)] {
+                let source_clock = clocks.xtal_clock;
+            }
+        }
 
         Self {
             frequency: source_clock / (prescaler as u32 + 1),
@@ -236,14 +242,17 @@ impl<'a> PeripheralClockConfig<'a> {
         clocks: &'a Clocks<'a>,
         target_freq: HertzU32,
     ) -> Result<Self, FrequencyError> {
-        #[cfg(esp32)]
-        let source_clock = clocks.pwm_clock;
-        #[cfg(esp32c6)]
-        let source_clock = clocks.crypto_clock;
-        #[cfg(esp32s3)]
-        let source_clock = clocks.crypto_pwm_clock;
-        #[cfg(esp32h2)]
-        let source_clock = clocks.xtal_clock;
+        cfg_if::cfg_if! {
+            if #[cfg(esp32)] {
+                let source_clock = clocks.pwm_clock;
+            } else if #[cfg(esp32c6)] {
+                let source_clock = clocks.crypto_clock;
+            } else if #[cfg(esp32s3)] {
+                let source_clock = clocks.crypto_pwm_clock;
+            } else if #[cfg(esp32h2)] {
+                let source_clock = clocks.xtal_clock;
+            }
+        }
 
         if target_freq.raw() == 0 || target_freq > source_clock {
             return Err(FrequencyError);
@@ -312,6 +321,8 @@ pub struct FrequencyError;
 pub trait PwmPeripheral: Deref<Target = RegisterBlock> + crate::private::Sealed {
     /// Enable peripheral
     fn enable();
+    /// Reset peripheral
+    fn reset();
     /// Get a pointer to the peripheral RegisterBlock
     fn block() -> *const RegisterBlock;
     /// Get operator GPIO mux output signal
@@ -322,6 +333,10 @@ pub trait PwmPeripheral: Deref<Target = RegisterBlock> + crate::private::Sealed 
 impl PwmPeripheral for crate::peripherals::MCPWM0 {
     fn enable() {
         PeripheralClockControl::enable(PeripheralEnable::Mcpwm0)
+    }
+
+    fn reset() {
+        PeripheralClockControl::reset(PeripheralEnable::Mcpwm0)
     }
 
     fn block() -> *const RegisterBlock {
@@ -345,6 +360,10 @@ impl PwmPeripheral for crate::peripherals::MCPWM0 {
 impl PwmPeripheral for crate::peripherals::MCPWM1 {
     fn enable() {
         PeripheralClockControl::enable(PeripheralEnable::Mcpwm1)
+    }
+
+    fn reset() {
+        PeripheralClockControl::reset(PeripheralEnable::Mcpwm1)
     }
 
     fn block() -> *const RegisterBlock {

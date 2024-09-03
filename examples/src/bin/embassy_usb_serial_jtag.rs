@@ -12,26 +12,13 @@ use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
-    peripherals::Peripherals,
-    system::SystemControl,
-    timer::{timg::TimerGroup, ErasedTimer, OneShotTimer},
+    timer::timg::TimerGroup,
     usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagRx, UsbSerialJtagTx},
     Async,
 };
 use static_cell::StaticCell;
 
 const MAX_BUFFER_SIZE: usize = 512;
-
-// When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
-macro_rules! mk_static {
-    ($t:ty,$val:expr) => {{
-        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
-        #[deny(unused_attributes)]
-        let x = STATIC_CELL.uninit().write(($val));
-        x
-    }};
-}
 
 #[embassy_executor::task]
 async fn writer(
@@ -67,23 +54,19 @@ async fn reader(
                 string_buffer.extend_from_slice(&rbuf[..len]).unwrap();
                 signal.signal(heapless::String::from_utf8(string_buffer).unwrap());
             }
+            #[allow(unreachable_patterns)]
             Err(e) => esp_println::println!("RX Error: {:?}", e),
         }
     }
 }
 
 #[esp_hal_embassy::main]
-async fn main(spawner: Spawner) -> () {
+async fn main(spawner: Spawner) {
     esp_println::println!("Init!");
-    let peripherals = Peripherals::take();
-    let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+    let (peripherals, clocks) = esp_hal::init(esp_hal::Config::default());
 
     let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let timer0: ErasedTimer = timg0.timer0.into();
-    let timers = [OneShotTimer::new(timer0)];
-    let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
-    esp_hal_embassy::init(&clocks, timers);
+    esp_hal_embassy::init(&clocks, timg0.timer0);
 
     let (tx, rx) = UsbSerialJtag::new_async(peripherals.USB_DEVICE).split();
 

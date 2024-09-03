@@ -18,16 +18,10 @@
 
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
-use embassy_net::{tcp::TcpSocket, Config, Ipv4Address, Stack, StackResources};
+use embassy_net::{tcp::TcpSocket, Ipv4Address, Stack, StackResources};
 use embassy_time::{with_timeout, Duration, Timer};
 use esp_backtrace as _;
-use esp_hal::{
-    clock::ClockControl,
-    peripherals::Peripherals,
-    rng::Rng,
-    system::SystemControl,
-    timer::{timg::TimerGroup, ErasedTimer, OneShotTimer, PeriodicTimer},
-};
+use esp_hal::{prelude::*, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
 use esp_wifi::{
     initialize,
@@ -72,21 +66,19 @@ static mut TX_BUFFER: [u8; TX_BUFFER_SIZE] = [0; TX_BUFFER_SIZE];
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
-
-    let peripherals = Peripherals::take();
-
-    let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::max(system.clock_control).freeze();
+    let (peripherals, clocks) = esp_hal::init({
+        let mut config = esp_hal::Config::default();
+        config.cpu_clock = CpuClock::max();
+        config
+    });
 
     let server_address: Ipv4Address = HOST_IP.parse().expect("Invalid HOST_IP address");
 
     let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let timer0: ErasedTimer = timg0.timer0.into();
-    let timer = PeriodicTimer::new(timer0);
 
     let init = initialize(
         EspWifiInitFor::Wifi,
-        timer,
+        timg0.timer0,
         Rng::new(peripherals.RNG),
         peripherals.RADIO_CLK,
         &clocks,
@@ -97,25 +89,18 @@ async fn main(spawner: Spawner) -> ! {
     let (wifi_interface, controller) =
         esp_wifi::wifi::new_with_mode(&init, wifi, WifiStaDevice).unwrap();
 
-    #[cfg(feature = "esp32")]
-    {
-        let timg1 = TimerGroup::new(peripherals.TIMG1, &clocks);
-        let timer0: ErasedTimer = timg1.timer0.into();
-        let timers = [OneShotTimer::new(timer0)];
-        let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
-        esp_hal_embassy::init(&clocks, timers);
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "esp32")] {
+            let timg1 = TimerGroup::new(peripherals.TIMG1, &clocks);
+            esp_hal_embassy::init(&clocks, timg1.timer0);
+        } else {
+            use esp_hal::timer::systimer::{SystemTimer, Target};
+            let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
+            esp_hal_embassy::init(&clocks, systimer.alarm0);
+        }
     }
 
-    #[cfg(not(feature = "esp32"))]
-    {
-        let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
-        let alarm0: ErasedTimer = systimer.alarm0.into();
-        let timers = [OneShotTimer::new(alarm0)];
-        let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
-        esp_hal_embassy::init(&clocks, timers);
-    }
-
-    let config = Config::dhcpv4(Default::default());
+    let config = embassy_net::Config::dhcpv4(Default::default());
 
     let seed = 1234; // very random, very secure seed
 

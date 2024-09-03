@@ -1,6 +1,7 @@
 //! USB Serial/JTAG Controller (USB_SERIAL_JTAG)
 //!
 //! ## Overview
+//!
 //! The USB Serial/JTAG controller can be used to program the SoC's flash, read
 //! program output, or attach a debugger to the running program. This is
 //! possible for any computer with a USB host (hereafter referred to as 'host'),
@@ -27,6 +28,7 @@
 //!   connect to a host computer
 //!
 //! ## Usage
+//!
 //! The USB Serial/JTAG driver implements a number of third-party traits, with
 //! the intention of making the HAL inter-compatible with various device drivers
 //! from the community. This includes, but is not limited to, the [embedded-hal]
@@ -38,21 +40,24 @@
 //! with this driver.
 //!
 //! ## Examples
+//!
 //! ### Sending and Receiving Data
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! use esp_hal::usb_serial_jtag::UsbSerialJtag;
+//!
 //! let mut usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
 //!
 //! // Write bytes out over the USB Serial/JTAG:
-//! usb_serial.write_bytes("Hello, world!".as_bytes()).expect("write error!");
-//! }
+//! usb_serial.write_bytes(b"Hello, world!").expect("write error!");
+//! # }
 //! ```
 //! 
 //! ### Splitting the USB Serial/JTAG into TX and RX Components
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
-//! # use esp_hal::usb_serial_jtag::UsbSerialJtag;
+//! use esp_hal::usb_serial_jtag::UsbSerialJtag;
+//!
 //! let mut usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
 //! // The USB Serial/JTAG can be split into separate Transmit and Receive
 //! // components:
@@ -273,6 +278,8 @@ where
     M: Mode,
 {
     fn new_inner(_usb_device: impl Peripheral<P = USB_DEVICE> + 'd) -> Self {
+        // Do NOT reset the peripheral. Doing so will result in a broken USB JTAG
+        // connection.
         PeripheralClockControl::enable(crate::system::Peripheral::UsbDevice);
 
         USB_DEVICE::disable_tx_interrupts();
@@ -310,7 +317,7 @@ where
     }
 
     /// Split the USB Serial JTAG peripheral into a transmitter and receiver,
-    /// which is particuarly useful when having two tasks correlating to
+    /// which is particularly useful when having two tasks correlating to
     /// transmitting and receiving.
     pub fn split(self) -> (UsbSerialJtagTx<'d, M>, UsbSerialJtagRx<'d, M>) {
         (self.tx, self.rx)
@@ -337,6 +344,7 @@ where
         self.tx.flush_tx_nb()
     }
 
+    /// Read a single byte but don't block if it isn't ready immediately
     pub fn read_byte(&mut self) -> nb::Result<u8, Error> {
         self.rx.read_byte()
     }
@@ -678,6 +686,7 @@ mod asynch {
     static WAKER_TX: AtomicWaker = AtomicWaker::new();
     static WAKER_RX: AtomicWaker = AtomicWaker::new();
 
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub(crate) struct UsbSerialJtagWriteFuture<'d> {
         phantom: PhantomData<&'d mut USB_DEVICE>,
     }
@@ -720,6 +729,7 @@ mod asynch {
         }
     }
 
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub(crate) struct UsbSerialJtagReadFuture<'d> {
         phantom: PhantomData<&'d mut USB_DEVICE>,
     }

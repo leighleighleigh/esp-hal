@@ -1,6 +1,7 @@
 //! # Timer Group (TIMG)
 //!
 //! ## Overview
+//!
 //! The Timer Group (TIMG) peripherals contain one or more general-purpose
 //! timers, plus one or more watchdog timers.
 //!
@@ -8,6 +9,7 @@
 //! auto-reload-capable up-down counter.
 //!
 //! ## Configuration
+//!
 //! The timers have configurable alarms, which are triggered when the internal
 //! counter of the timers reaches a specific target value. The timers are
 //! clocked using the APB clock source.
@@ -18,14 +20,14 @@
 //! - Generate one-shot alarms; trigger events once
 //! - Free-running; fetching a high-resolution timestamp on demand
 //!
-//!
 //! ## Examples
+//!
 //! ### General-purpose Timer
+//!
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! # use esp_hal::timer::timg::TimerGroup;
-//! # use crate::esp_hal::prelude::_esp_hal_timer_Timer;
-//! # use esp_hal::prelude::*;
+//!
 //! let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
 //! let timer0 = timg0.timer0;
 //!
@@ -39,14 +41,16 @@
 //! while !timer0.is_interrupt_set() {
 //!     // Wait
 //! }
+//!
+//! timer0.clear_interrupt();
 //! # }
 //! ```
 //! 
-//! #### Watchdog Timer
+//! ### Watchdog Timer
 //! ```rust, no_run
 #![doc = crate::before_snippet!()]
 //! # use esp_hal::timer::timg::TimerGroup;
-//! # use esp_hal::prelude::*;
+//!
 //! let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
 //! let mut wdt = timg0.wdt;
 //!
@@ -74,6 +78,7 @@ use crate::soc::constants::TIMG_DEFAULT_CLK_SRC;
 use crate::{
     clock::Clocks,
     interrupt::{self, InterruptHandler},
+    lock,
     peripheral::{Peripheral, PeripheralRef},
     peripherals::{timg0::RegisterBlock, Interrupt, TIMG0},
     private::Sealed,
@@ -81,8 +86,11 @@ use crate::{
     Async,
     Blocking,
     InterruptConfigurable,
+    LockState,
     Mode,
 };
+
+static INT_ENA_LOCK: LockState = LockState::new();
 
 /// A timer group consisting of up to 2 timers (chip dependent) and a watchdog
 /// timer.
@@ -106,6 +114,8 @@ pub trait TimerGroupInstance {
     fn id() -> u8;
     fn register_block() -> *const RegisterBlock;
     fn configure_src_clk();
+    fn enable_peripheral();
+    fn reset_peripheral();
     fn configure_wdt_src_clk();
 }
 
@@ -142,6 +152,14 @@ impl TimerGroupInstance for TIMG0 {
     #[cfg(esp32)]
     fn configure_src_clk() {
         // ESP32 has only APB clock source, do nothing
+    }
+
+    fn enable_peripheral() {
+        crate::system::PeripheralClockControl::enable(crate::system::Peripheral::Timg0)
+    }
+
+    fn reset_peripheral() {
+        // for TIMG0 do nothing for now because the reset breaks `current_time`
     }
 
     #[inline(always)]
@@ -207,6 +225,16 @@ impl TimerGroupInstance for TIMG1 {
     }
 
     #[inline(always)]
+    fn enable_peripheral() {
+        crate::system::PeripheralClockControl::enable(crate::system::Peripheral::Timg1)
+    }
+
+    #[inline(always)]
+    fn reset_peripheral() {
+        crate::system::PeripheralClockControl::reset(crate::system::Peripheral::Timg1)
+    }
+
+    #[inline(always)]
     #[cfg(any(esp32c6, esp32h2))]
     fn configure_wdt_src_clk() {
         unsafe { &*crate::peripherals::PCR::PTR }
@@ -222,25 +250,34 @@ impl TimerGroupInstance for TIMG1 {
     }
 }
 
-impl<'d, T> TimerGroup<'d, T, Blocking>
+impl<'d, T, DM> TimerGroup<'d, T, DM>
 where
     T: TimerGroupInstance,
+    DM: crate::Mode,
 {
     /// Construct a new instance of [`TimerGroup`] in blocking mode
-    pub fn new(_timer_group: impl Peripheral<P = T> + 'd, clocks: &Clocks<'d>) -> Self {
+    pub fn new_inner(_timer_group: impl Peripheral<P = T> + 'd, clocks: &Clocks<'d>) -> Self {
         crate::into_ref!(_timer_group);
+
+        T::reset_peripheral();
+        T::enable_peripheral();
 
         T::configure_src_clk();
 
-        // ESP32-H2 is using PLL_48M_CLK source instead of APB_CLK
+        cfg_if::cfg_if! {
+            if #[cfg(esp32h2)] {
+                // ESP32-H2 is using PLL_48M_CLK source instead of APB_CLK
+                let apb_clk_freq = clocks.pll_48m_clock;
+            } else {
+                let apb_clk_freq = clocks.apb_clock;
+            }
+        };
+
         let timer0 = Timer::new(
             Timer0 {
                 phantom: PhantomData,
             },
-            #[cfg(not(esp32h2))]
-            clocks.apb_clock,
-            #[cfg(esp32h2)]
-            clocks.pll_48m_clock,
+            apb_clk_freq,
         );
 
         #[cfg(timg_timer1)]
@@ -248,7 +285,7 @@ where
             Timer1 {
                 phantom: PhantomData,
             },
-            clocks.apb_clock,
+            apb_clk_freq,
         );
 
         Self {
@@ -261,42 +298,23 @@ where
     }
 }
 
+impl<'d, T> TimerGroup<'d, T, Blocking>
+where
+    T: TimerGroupInstance,
+{
+    /// Construct a new instance of [`TimerGroup`] in blocking mode
+    pub fn new(timer_group: impl Peripheral<P = T> + 'd, clocks: &Clocks<'d>) -> Self {
+        Self::new_inner(timer_group, clocks)
+    }
+}
+
 impl<'d, T> TimerGroup<'d, T, Async>
 where
     T: TimerGroupInstance,
 {
     /// Construct a new instance of [`TimerGroup`] in asynchronous mode
-    pub fn new_async(_timer_group: impl Peripheral<P = T> + 'd, clocks: &Clocks<'d>) -> Self {
-        crate::into_ref!(_timer_group);
-
-        T::configure_src_clk();
-
-        // ESP32-H2 is using PLL_48M_CLK source instead of APB_CLK
-        let timer0 = Timer::new(
-            Timer0 {
-                phantom: PhantomData,
-            },
-            #[cfg(not(esp32h2))]
-            clocks.apb_clock,
-            #[cfg(esp32h2)]
-            clocks.pll_48m_clock,
-        );
-
-        #[cfg(timg_timer1)]
-        let timer1 = Timer::new(
-            Timer1 {
-                phantom: PhantomData,
-            },
-            clocks.apb_clock,
-        );
-
-        Self {
-            _timer_group,
-            timer0,
-            #[cfg(timg_timer1)]
-            timer1,
-            wdt: Wdt::new(),
-        }
+    pub fn new_async(timer_group: impl Peripheral<P = T> + 'd, clocks: &Clocks<'d>) -> Self {
+        Self::new_inner(timer_group, clocks)
     }
 }
 
@@ -343,7 +361,7 @@ where
         }
     }
 
-    /// Block until the timer has elasped.
+    /// Block until the timer has elapsed.
     pub fn wait(&mut self) {
         while !self.has_elapsed() {}
     }
@@ -468,14 +486,16 @@ where
             .config()
             .modify(|_, w| w.level_int_en().set_bit());
 
-        self.register_block()
-            .int_ena_timers()
-            .modify(|_, w| w.t(self.timer_number()).bit(state));
+        lock(&INT_ENA_LOCK, || {
+            self.register_block()
+                .int_ena()
+                .modify(|_, w| w.t(self.timer_number()).bit(state));
+        });
     }
 
     fn clear_interrupt(&self) {
         self.register_block()
-            .int_clr_timers()
+            .int_clr()
             .write(|w| w.t(self.timer_number()).clear_bit_by_one());
     }
 
@@ -499,7 +519,7 @@ where
 
     fn is_interrupt_set(&self) -> bool {
         self.register_block()
-            .int_raw_timers()
+            .int_raw()
             .read()
             .t(self.timer_number())
             .bit_is_set()
@@ -693,20 +713,24 @@ where
             .config()
             .modify(|_, w| w.level_int_en().set_bit());
 
-        self.register_block()
-            .int_ena_timers()
-            .modify(|_, w| w.t(T).set_bit());
+        lock(&INT_ENA_LOCK, || {
+            self.register_block()
+                .int_ena()
+                .modify(|_, w| w.t(T).set_bit());
+        });
     }
 
     fn unlisten(&self) {
-        self.register_block()
-            .int_ena_timers()
-            .modify(|_, w| w.t(T).clear_bit());
+        lock(&INT_ENA_LOCK, || {
+            self.register_block()
+                .int_ena()
+                .modify(|_, w| w.t(T).clear_bit());
+        });
     }
 
     fn clear_interrupt(&self) {
         self.register_block()
-            .int_clr_timers()
+            .int_clr()
             .write(|w| w.t(T).clear_bit_by_one());
     }
 
@@ -739,11 +763,7 @@ where
     }
 
     fn is_interrupt_set(&self) -> bool {
-        self.register_block()
-            .int_raw_timers()
-            .read()
-            .t(T)
-            .bit_is_set()
+        self.register_block().int_raw().read().t(T).bit_is_set()
     }
 
     fn set_divider(&self, divider: u16) {
