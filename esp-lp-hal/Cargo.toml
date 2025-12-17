@@ -72,6 +72,8 @@ esp32c6 = ["dep:esp32c6-lp",  "esp-metadata-generated/esp32c6", "procmacros/is-l
 esp32s2 = ["dep:esp32s2-ulp", "esp-metadata-generated/esp32s2", "procmacros/is-ulp-core"]
 # Target the ESP32-S3.
 esp32s3 = ["dep:esp32s3-ulp", "esp-metadata-generated/esp32s3", "procmacros/is-ulp-core"]
+# Write the stack guard at __stack_chk_guard 
+stack-guard = []
 
 #! ### Trait Implementation Feature Flags
 ## Implement the traits defined in the `1.0.0` releases of `embedded-hal` and

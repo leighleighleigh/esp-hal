@@ -134,7 +134,6 @@ irq_vector:
 __start:
     /* setup the stack pointer */
 	la sp, __stack_top
-
 	call ulp_riscv_rescue_from_monitor
 	call rust_main
 	call ulp_riscv_halt
@@ -165,6 +164,20 @@ unsafe extern "C" fn lp_core_startup() -> ! {
     }
 }
 
+#[cfg(feature = "stack-guard")]
+#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[unsafe(link_section = ".init.rust")]
+/// Writes an expected value to __stack_chk_guard
+pub fn setup_stack_guard(value : u32) {
+    unsafe extern "C" {
+        static mut __stack_chk_guard: u32;
+    }
+    unsafe {
+        let stack_chk_guard = core::ptr::addr_of_mut!(__stack_chk_guard);
+        stack_chk_guard.write_unaligned(value);
+    }
+}
+
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
 #[unsafe(link_section = ".init.rust")]
 #[unsafe(no_mangle)]
@@ -173,6 +186,17 @@ unsafe extern "C" fn ulp_riscv_rescue_from_monitor() {
     unsafe { &*pac::RTC_CNTL::PTR }
         .cocpu_ctrl()
         .modify(|_, w| w.cocpu_done().clear_bit().cocpu_shut_reset_en().clear_bit());
+
+    #[cfg(feature = "stack-guard")]
+    setup_stack_guard(0xdeadbabe);
+}
+
+#[cfg(feature = "stack-guard")]
+#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[unsafe(link_section = ".init.rust")]
+#[unsafe(export_name = "__stack_chk_fail")]
+unsafe extern "C" fn stack_chk_fail() {
+    panic!("Stack corruption detected");
 }
 
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
