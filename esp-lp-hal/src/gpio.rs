@@ -84,7 +84,6 @@ impl<const PIN: u8> Output<PIN> {
     }
 }
 
-
 impl<const PIN: u8> OutputOpenDrain<PIN> {
     /// Read the output state/level of the pin.
     pub fn output_state(&self) -> bool {
