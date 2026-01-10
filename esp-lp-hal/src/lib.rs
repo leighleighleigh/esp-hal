@@ -67,8 +67,8 @@ pub fn wake_hp_core() {
 
 /// Wake up the HP core
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-#[unsafe(no_mangle)]
-pub fn wake_hp_core() {
+#[unsafe(link_section = ".init.rust")]
+pub fn ulp_wake_hp_core() {
     unsafe { &*pac::RTC_CNTL::PTR }
         .rtc_state0()
         .write(|w| w.rtc_sw_cpu_int().set_bit());
@@ -184,7 +184,8 @@ global_asm!(
   .section .text.vectors
   .global irq_vector
   .global reset_vector
-  .global ulp_irq_handler
+  .weak ulp_irq_handler
+  .type ulp_irq_handler, @function
   
   /* The reset vector, jumps to startup code */
   reset_vector:
@@ -196,8 +197,7 @@ global_asm!(
     /* Save the general gurpose register context before handling the interrupt */
     save_general_regs
     /* Fetch the interrupt status from the custom q1 register into a0 */
-    /* getq_insn(a0, q1) */
-    /* .word (((0b0000000) << 25) | ((0) << 20) | ((1) << 15) | ((0b100) << 12) | ((10) << 7) | ((0b0001011) << 0)) */
+    /* Equivalent to getq_insn(a0, q1) */
     .word 0x0000C50B
 
     /* Call the global C interrupt handler. The interrupt status is passed as the argument in a0.
@@ -210,17 +210,37 @@ global_asm!(
     restore_general_regs
 
     /* Exit interrupt handler by executing the custom retirq instruction which will restore pc and re-enable interrupts */
-    /* retirq_insn() */
-    /* .word (((0b0000010) << 25) | ((0) << 20) | ((0) << 15) | ((0b000) << 12) | ((0) << 7) | ((0b0001011) << 0)); */
+    /* Equivalent to retirq_insn() */
     .word 0x0400000B
-  
+ 
+
   .balign 0x10
-	.section .text
-  
+	.section .init
+
+  /* Weakly-linked IRQ handler.
+  *  Simply clears the IRQ and returns.
+  */
+  ulp_irq_handler:
+     bltz    a0,1f
+     ret
+     1:
+     lui     a0,0xd
+     lw      a1,-1808(a0)
+     beqz    a1,2f
+     sw      a1,-1804(a0)
+     2:
+     lui     a0,0xa
+     lw      a1,1048(a0)
+     beqz    a1,3f
+     sw      a1,1056(a0)
+     3:
+     ret 
+
+  .balign 0x10
   __start:
     /* setup the stack pointer */
     la sp, __stack_top
-    /* enable interrupts */
+    /* Equivalent to ulp_enable_interrupts() */
     .word 0x0600600b
     call ulp_riscv_rescue_from_monitor
     call rust_main
@@ -231,6 +251,7 @@ global_asm!(
 );
 
 #[unsafe(export_name = "rust_main")]
+#[unsafe(link_section = ".init")]
 unsafe extern "C" fn lp_core_startup() -> ! {
     unsafe {
         unsafe extern "Rust" {
@@ -246,7 +267,7 @@ unsafe extern "C" fn lp_core_startup() -> ! {
         {
             CPU_CLOCK = XTAL_D2_CLK_HZ;
         }
-        
+
         main();
         ulp_riscv_halt();
     }
@@ -254,7 +275,7 @@ unsafe extern "C" fn lp_core_startup() -> ! {
 
 /// Enter a critical section (disable interrupts)
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-#[inline(always)]
+#[unsafe(link_section = ".init.rust")]
 pub fn ulp_disable_interrupts() {
     // Enter a critical section by disabling all interrupts
     // This inline assembly construct uses the t0 register and is equivalent to:
@@ -274,7 +295,7 @@ pub fn ulp_disable_interrupts() {
 
 /// Exit a critical section (re-enable interrupts)
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-#[inline(always)]
+#[unsafe(link_section = ".init.rust")]
 pub fn ulp_enable_interrupts() {
     // Exit a critical section by enabling all interrupts
     // This inline assembly construct is equivalent to:
@@ -286,7 +307,7 @@ pub fn ulp_enable_interrupts() {
 
 /// Wait for any (even unmasked) interrupt
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-#[inline(always)]
+#[unsafe(link_section = ".init.rust")]
 pub fn ulp_waitirq() {
     // Wait for interrupt
     // waitirq x0
@@ -297,6 +318,7 @@ pub fn ulp_waitirq() {
 
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".init")]
 unsafe extern "C" fn ulp_riscv_rescue_from_monitor() {
     // Rescue RISC-V core from monitor state.
     unsafe { &*pac::RTC_CNTL::PTR }
@@ -306,38 +328,36 @@ unsafe extern "C" fn ulp_riscv_rescue_from_monitor() {
 
 /// Stops the ULP core, called from itself.
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-pub fn ulp_riscv_halt() -> ! {
-    //unsafe { &*pac::RTC_CNTL::PTR }
-    //    .cocpu_ctrl()
-    //    .write(|w| unsafe {
-    //        w.cocpu_shut_2_clk_dis()
-    //            .bits(0x3f)
-    //            .cocpu_done()
-    //            .set_bit()
-    //            .cocpu_shut_reset_en()
-    //            .set_bit()
-    //    });
-    //loop {
-    //    //ulp_waitirq();
-    //}
-
+#[unsafe(link_section = ".init.rust")]
+fn ulp_riscv_halt() -> ! {
     unsafe {
-      core::arch::asm!(
-        "lui a5,0x8",
-        "addi a5,a5,260",
-        "lw a4,0(a5)",
-        "lui a3,0xffc04",
-        "addi a3,a3,-1",
-        "and a4,a4,a3",
-        "lui a3,0xfc",
-        "or a4,a4,a3",
-        "sw a4,0(a5)",
-        "lw a4,0(a5)",
-        "lui a3,0x2400",
-        "or a4,a4,a3",
-        "sw a4,0(a5)",
-      );
+        core::arch::asm!(
+            "lui a5,0x8",
+            "addi a5,a5,260",
+            // 0x8000 + 260 = 0x8104
+            "lw a4,0(a5)",
+            // a4 == *0x8104 == contents of RTC_CNTL::cocpu_ctrl register
+            "lui a3,0xffc04",
+            "addi a3,a3,-1",
+            // a3 = 0xFFC03FFF = bitmask
+            "and a4,a4,a3",
+            // a4 == a4 & a3 == bits [14-21] of a3
+            "lui a3,0xfc",
+            // a3 == 0xFC000
+            "or a4,a4,a3",
+            // a4 = a4 | a3, so we are setting bits [14-19] to 1, while keeping the existing values
+            // of btis [20,21].
+            "sw a4,0(a5)",
+            // store it back to cocpu_ctrl
+            "lw a4,0(a5)",
+            // re-load it back again?
+            // a3 = 0x2400000, i.e. bit 22 and 25 are set.
+            "lui a3,0x2400",
+            // do another or operation! so we are setting bit 22 and 25
+            "or a4,a4,a3",
+            // save it back!
+            "sw a4,0(a5)",
+        );
+        loop {}
     }
-
-    loop {}
 }
