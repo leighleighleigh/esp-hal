@@ -2,10 +2,13 @@
 mod tests {
     use esp_hal::{
         Config,
-        clock::CpuClock,
         delay::Delay,
         rtc_cntl::{Rtc, RwdtStage},
         time::Duration,
+    };
+    #[cfg(timergroup_driver_supported)]
+    use esp_hal::{
+        clock::CpuClock,
         timer::timg::{MwdtStage, TimerGroup},
     };
 

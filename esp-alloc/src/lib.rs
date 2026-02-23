@@ -161,7 +161,7 @@ use esp_sync::NonReentrantMutex;
 use crate::heap::Heap;
 
 /// The global allocator instance
-#[global_allocator]
+#[cfg_attr(feature = "global-allocator", global_allocator)]
 pub static HEAP: EspHeap = EspHeap::empty();
 
 const BAR_WIDTH: usize = 35;
@@ -231,6 +231,7 @@ impl Display for RegionStats {
 }
 
 #[cfg(feature = "defmt")]
+#[allow(clippy::if_same_then_else)]
 impl defmt::Format for RegionStats {
     fn format(&self, fmt: defmt::Formatter<'_>) {
         let usage_percent = self.used * 100 / self.size;
@@ -335,11 +336,11 @@ pub struct HeapStats {
 
     /// Estimation of the total allocated bytes since initialization.
     #[cfg(feature = "internal-heap-stats")]
-    pub total_allocated: usize,
+    pub total_allocated: u64,
 
     /// Estimation of the total freed bytes since initialization.
     #[cfg(feature = "internal-heap-stats")]
-    pub total_freed: usize,
+    pub total_freed: u64,
 }
 
 impl Display for HeapStats {
@@ -389,8 +390,8 @@ impl defmt::Format for HeapStats {
 #[cfg(feature = "internal-heap-stats")]
 struct InternalHeapStats {
     max_usage: usize,
-    total_allocated: usize,
-    total_freed: usize,
+    total_allocated: u64,
+    total_freed: u64,
 }
 
 struct EspHeapInner {
@@ -545,7 +546,10 @@ impl EspHeapInner {
             // so we cannot use the size provided by the layout.
             let used = self.used();
 
-            self.internal_heap_stats.total_allocated += used - before;
+            self.internal_heap_stats.total_allocated = self
+                .internal_heap_stats
+                .total_allocated
+                .saturating_add((used - before) as u64);
             self.internal_heap_stats.max_usage =
                 core::cmp::max(self.internal_heap_stats.max_usage, used);
         }
@@ -667,7 +671,10 @@ unsafe impl GlobalAlloc for EspHeap {
                 // We need to call `used()` because [linked_list_allocator::Heap] does internal
                 // size alignment so we cannot use the size provided by the
                 // layout.
-                this.internal_heap_stats.total_freed += before - this.used();
+                this.internal_heap_stats.total_freed = this
+                    .internal_heap_stats
+                    .total_freed
+                    .saturating_add((before - this.used()) as u64);
             }
         })
     }

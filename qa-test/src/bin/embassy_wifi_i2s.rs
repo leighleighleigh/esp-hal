@@ -1,4 +1,4 @@
-//% FEATURES: esp-radio esp-radio/wifi esp-radio/smoltcp esp-radio/unstable esp-hal/unstable
+//% FEATURES: esp-radio esp-radio/wifi esp-radio/unstable esp-hal/unstable
 //% CHIPS: esp32 esp32s2 esp32s3
 
 #![no_std]
@@ -22,15 +22,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use esp_println::println;
-use esp_radio::wifi::{
-    ModeConfig,
-    WifiController,
-    WifiDevice,
-    WifiEvent,
-    WifiStationState,
-    sta::StationConfig,
-    station_state,
-};
+use esp_radio::wifi::{Config, Interface, WifiController, sta::StationConfig};
 use static_cell::StaticCell;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -52,7 +44,7 @@ macro_rules! mk_static {
 
 /// Network stack task
 #[embassy_executor::task]
-async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
+async fn net_task(mut runner: Runner<'static, Interface<'static>>) {
     runner.run().await
 }
 
@@ -62,62 +54,26 @@ async fn connection_manager(
     mut controller: WifiController<'static>,
     connected_signal: &'static Signal<NoopRawMutex, bool>,
 ) {
-    println!("📡 Starting WiFi connection manager");
-
-    if !matches!(controller.is_started(), Ok(true)) {
-        let station_config = ModeConfig::Station(
-            StationConfig::default()
-                .with_ssid(SSID.into())
-                .with_password(PASSWORD.into()),
-        );
-        controller.set_config(&station_config).unwrap();
-        println!("🔄 Starting WiFi...");
-        controller.start_async().await.unwrap();
-        println!("✅ WiFi started");
-    }
-
-    println!("🔗 Connecting to WiFi network");
-    match controller.connect_async().await {
-        Ok(_) => {
-            println!("✅ WiFi connected!");
-            connected_signal.signal(true);
-        }
-        Err(e) => println!("❌ Initial WiFi connection failed: {:?}", e),
-    }
+    println!("start connection task");
 
     loop {
-        match station_state() {
-            WifiStationState::Connected => {
-                controller
-                    .wait_for_event(WifiEvent::StationDisconnected)
-                    .await;
-                println!("📶 WiFi connection lost - attempting reconnection");
-                Timer::after(Duration::from_millis(2000)).await;
-                match controller.connect_async().await {
-                    Ok(_) => {
-                        println!("✅ WiFi reconnected!");
-                        connected_signal.signal(true);
-                    }
-                    Err(e) => {
-                        println!("❌ WiFi reconnection failed: {:?}", e);
-                        Timer::after(Duration::from_millis(5000)).await;
-                    }
-                }
+        println!("About to connect...");
+
+        match controller.connect_async().await {
+            Ok(info) => {
+                println!("Wifi connected to {:?}", info);
+                connected_signal.signal(true);
+
+                // wait until we're no longer connected
+                let info = controller.wait_for_disconnect_async().await.ok();
+                println!("Disconnected: {:?}", info);
             }
-            _ => {
-                println!("🔗 Reconnecting to WiFi network: {}", SSID);
-                match controller.connect_async().await {
-                    Ok(_) => {
-                        println!("✅ WiFi connected!");
-                        connected_signal.signal(true);
-                    }
-                    Err(e) => {
-                        println!("❌ WiFi connection failed: {:?}", e);
-                        Timer::after(Duration::from_millis(5000)).await;
-                    }
-                }
+            Err(e) => {
+                println!("Failed to connect to wifi: {e:?}");
             }
         }
+
+        Timer::after(Duration::from_millis(5000)).await
     }
 }
 
@@ -140,7 +96,7 @@ async fn i2s_dma_drain(
     let mut transaction = match i2s_rx.read_dma_circular_async(buffer) {
         Ok(t) => t,
         Err(e) => {
-            println!("❌ Failed to start I2S DMA: {:?}", e);
+            println!("Failed to start I2S DMA: {:?}", e);
             return;
         }
     };
@@ -150,7 +106,7 @@ async fn i2s_dma_drain(
     let start = Instant::now();
 
     // Start continuous draining to prevent DmaError(Late)
-    println!("🧹 Starting continuous buffer drain to keep DMA synchronized...");
+    println!("Starting continuous buffer drain to keep DMA synchronized...");
     while !connected_signal.signaled() {
         // Check for available data and drain it
         match transaction.pop(i2s_data).await {
@@ -163,13 +119,13 @@ async fn i2s_dma_drain(
                     esp_hal::i2s::master::Error::DmaError(esp_hal::dma::DmaError::Late)
                 ) {
                     println!(
-                        "🧹 Late error during drain - (waiting connection signal) {:?}",
+                        "Late error during drain - (waiting connection signal) {:?}",
                         esp_hal::system::Cpu::current()
                     );
                     late_errors += 1;
                 } else {
                     println!(
-                        "⚠️ Error during continuous drain: {:?}  {:?}",
+                        "Error during continuous drain: {:?}  {:?}",
                         e,
                         esp_hal::system::Cpu::current()
                     );
@@ -181,23 +137,23 @@ async fn i2s_dma_drain(
         Timer::after(Duration::from_millis(1)).await;
     }
     println!(
-        "📊 Drained: {} bytes | Late errors: {} | uptime: {} ms",
+        "Drained: {} bytes | Late errors: {} | uptime: {} ms",
         total_drained,
         late_errors,
         start.elapsed().as_millis()
     );
     match transaction.pop(i2s_data).await {
         Ok(bytes) => {
-            println!("🧹 Final drained {} bytes total", bytes);
+            println!("Final drained {} bytes total", bytes);
         }
         Err(e) => {
             if matches!(
                 e,
                 esp_hal::i2s::master::Error::DmaError(esp_hal::dma::DmaError::Late)
             ) {
-                println!("🧹 Late error during drain -  (final drain)");
+                println!("Late error during drain -  (final drain)");
             } else {
-                println!("⚠️ Error during final drain: {:?}", e);
+                println!("Error during final drain: {:?}", e);
             }
         }
     }
@@ -244,7 +200,7 @@ async fn main(spawner: Spawner) {
         .build(rx_descriptors);
 
     // WiFi + network stack
-    let (controller, interfaces) =
+    let (mut controller, interfaces) =
         esp_radio::wifi::new(peripherals.WIFI, Default::default()).unwrap();
     let wifi_interface = interfaces.station;
 
@@ -262,6 +218,15 @@ async fn main(spawner: Spawner) {
     static CONNECTED_SIGNAL: StaticCell<Signal<NoopRawMutex, bool>> = StaticCell::new();
 
     let connected_signal = &*CONNECTED_SIGNAL.init(Signal::new());
+
+    let station_config = Config::Station(
+        StationConfig::default()
+            .with_ssid(SSID)
+            .with_password(PASSWORD.into()),
+    );
+    println!("Starting wifi");
+    controller.set_config(&station_config).unwrap();
+    println!("Wifi started!");
 
     // Tasks
     spawner.spawn(net_task(runner)).ok();

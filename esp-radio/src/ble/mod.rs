@@ -11,15 +11,20 @@ pub(crate) mod npl;
 use alloc::{boxed::Box, collections::vec_deque::VecDeque, vec::Vec};
 use core::mem::MaybeUninit;
 
-pub use ble::ble_os_adapter_chip_specific::Config;
 pub(crate) use ble::{ble_deinit, ble_init, send_hci};
+use docsplay::Display;
 use esp_sync::NonReentrantMutex;
 
 /// An error that is returned when the configuration is invalid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Display, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[non_exhaustive]
 pub struct InvalidConfigError;
+
+impl core::error::Error for InvalidConfigError {}
+
+// Expose chip-specific configuration types
+pub use ble::ble_os_adapter_chip_specific::*;
 
 #[cfg(bt_controller = "btdm")]
 use self::btdm as ble;
@@ -41,16 +46,6 @@ pub(crate) unsafe extern "C" fn malloc_internal(size: u32) -> *mut crate::sys::c
 
 pub(crate) unsafe extern "C" fn free(ptr: *mut crate::sys::c_types::c_void) {
     unsafe { crate::compat::malloc::free(ptr.cast()) }
-}
-
-/// Gets the MAC address of the device.
-#[instability::unstable]
-pub fn mac() -> [u8; 6] {
-    let mut mac = [0u8; 6];
-    unsafe {
-        crate::common_adapter::read_mac(mac.as_mut_ptr(), 2);
-    }
-    mac
 }
 
 struct BleState {
@@ -130,7 +125,7 @@ impl HciOutCollector {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// Represents a received BLE packet.
 #[instability::unstable]
 pub struct ReceivedPacket {

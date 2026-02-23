@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ble::mac` to get the MAC address of the device (#4485)
 - `last_calibration_result` to get the result of the last calibration (#4479)
 - `BleInitError` for BLE init failures and `Internal`, `WrongClockConfig`, `SchedulerNotInitialized` and `Adc2IsUsed` variants to `WifiError (#4482)
+- `wifi::csi::WifiCsiInfo` wraps `wifi::wifi_csi_info_t` (#4643)
+- `WifiController::set_channel()`, `WifiController::channel()` `WifiController::set_bandwidth()`, `WifiController::bandwidth()` methods and `Bandwidth` enum (#4705)
+- Exposed types necessary to configure the ble `Config` structure. (#4764)
+- New configuration options `ESP_RADIO_CONFIG_EVENT_CHANNEL_CAPACITY` and `ESP_RADIO_CONFIG_EVENT_CHANNEL_SUBSCRIBERS` to configure the internal event channel. (#4898)
+- A new `subscribe()` method on `WifiController` to get an `EventSubscriber` for receiving Wi-Fi events. (#4898)
+- New event-related types: `event::EventInfo`, `event::WifiEvent`, `wifi::DisconnectReason`, `wifi::ConnectedStationInfo`, `wifi::DisconnectedStationInfo`, `wifi::AccessPointStationConnectedInfo`, `wifi::AccessPointStationDisconnectedInfo`, `wifi::AccessPointStationEventInfo`. (#4898)
+- `enable_wifi_events` and `disable_wifi_events` functions to control which Wi-Fi events are processed. (#4898)
+- Added `WifiController::set_max_tx_power`, allowing the configuration of the maximum Wi-Fi transmitting power. (#4906)
+- Basic WiFi support for ESP32-C5 (#5003)
+- `set_band_mode` to support 5G-band (#5023)
 
 ### Changed
 
@@ -28,7 +38,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WifiController::set_mode` is now unstable (#4570)
 - `ScanTypeConfig` now uses `esp_hal::time::Duration` instead of `core::time::Duration` (#4609)
 - The `CsiConfig` struct has been moved to the `wifi::csi` module (#4588)
-- The `ScanMethod`, `ScanTypeConfig`, and `ScanConfig` types have been moved to `wifi::scan` (#4588)
+- The `ScanTypeConfig`, and `ScanConfig` types have been moved to `wifi::scan` (#4588)
+- `esp-alloc` dependency no longer enables default features (#4721)
+- `sys-logs` feature has been renamed to `print-logs-from-driver` and has been marked unstable (#4810)
+- Unstable features now require the `unstable` feature flag to be enabled (#4810)
+- `RxControlInfo` is unstable, `RxControlInfo::from_raw()` is no longer public (#4811)
+- `event`, `sniffer`, and `csi` modules are marked unstable (#4811)
+- `WifiDevice` has been renamed to `Interface` and `WifiDeviceMode` to `InterfaceType` (#4881)
+- `wifi::Config` has been changed to `wifi::ControllerConfig` and `wifi::ModeConfig` into `wifi::Config` (#4891)
+- `connect_async` now returns `Ok(ConnectedStationInfo)` on success, providing detailed information about the connection. (#4898)
+- `disconnect_async` now returns `Ok(DisconnectedStationInfo)`. (#4898)
+- `WifiError::Disconnected` is now a tuple-like enum variant `WifiError::Disconnected(DisconnectedStationInfo)` containing details about the disconnection. (#4898)
+- `WifiController::scan_with_config_async` has been changed to `WifiController::scan_async` (#4946)
+- Various structs now use the `Ssid` type to represent SSIDs instead of `String` (#4953)
+- Update to `bt-hci` version 0.8 and `trouble-host` version 0.6 (#4962)
+- `WifiController::is_connected()` and `WifiController::is_started()` now return a simple `bool` instead of `Result<bool, WifiError>` and are marked as unstable (#4971)
+- `ScanMethod` has been moved to `wifi::sta` (#5033)
+- `set_protocols` / `set_bandwidths` changed to support 5G-band (#5023)
+- `CountryInfo` is now unstable (#4981)
+- MAC addresses now should be obtained from `esp_hal::efuse::Efuse::interface_mac_address(InterfaceMacAddress::...)`. (#5002)
 
 ### Fixed
 
@@ -36,11 +64,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a linker error (about missing symbols) when the `wifi` feature is selected but the code doesn't use it (#4513)
 - `Controller::stop_async()` now returns `WifiError::NotStarted` when the `Controller` has not been started (#4504)
 - ESP32-C2: Disable BLE controller before deinitializing the stack (#4606)
+- Fix a crash after shutting down WiFi (#4761)
+- Fix a crash when trying to handle an unknown WiFi event (#4942)
+- Align IEEE 802.15.4 driver with ESP-IDF 5.5.2 C driver: overhauled ISR event handling, added timer0-based ACK timeout, per-state stop dispatch, TX deferral with pending TX mechanism, CCA support, ACK frame return, and fixed TX power default (20 dBm) (#5006)
 
 ### Removed
 
 - The `serde` feature has been removed (#4435)
 - `Controller` struct and `InitializationError::InterruptsDisabled` enum variant have been removed (#4482)
+- `wifi::wifi_csi_info_t` is no longer exposed to the public API (#4643)
+- the free standing `xxx_state()` functions have been removed together with their return types `WifiApState`/`WifiStaState` (#4571)
+- `wifi::Country` has been replaced by `wifi::CountryInfo` (#4788)
+- `InitializationError` is no longer `pub` for `wifi` (#4809)
+- `wifi::Capability` and `WifiController::capabilities()` no longer available (#4816)
+- `FreeApListOnDrop` is no longer available (#4816)
+- `wifi::ModeConfig::None` is no longer available (#4834)
+- Support for non-async `start`,`stop`,`scan`,`connect` and `disconnect` in `WifiController` has been removed (#4870)
+- Support for the feature `smoltcp` has been removed (#4870)
+- The `event::EventExt` trait and its associated handler functions (`update_handler`, `take_handler`, `replace_handler`) have been removed. Use `WifiController::subscribe()` instead. (#4898)
+- `WifiController` methods `wait_for_event`, `wait_for_events`, and `wait_for_all_events` have been removed. They are replaced by `wait_for_disconnect_async`, `wait_for_access_point_connected_event_async`, or by using an `EventSubscriber`. (#4898)
+- `wifi::WifiMode` and `WifiController::set_mode` have been removed (#4991)
+- `WifiController` methods `start_async` and `stop_async` have been removed. `set_config` will now make sure that the controller is started / re-started as needed. Dropping the controller will stop it first. (#4984)
+- `power_save` has been dropped from `ControllerConfig` (#4981)
+- MAC address getters: `access_point_mac()`, `station_mac()` and `ble::mac()`. (#5002)
 
 ## [v0.17.0] - 2025-10-30
 
@@ -78,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update bt-hci version to add additional HCI commands (#3920)
 - `AuthMethod`, `Protocol`, `AccessPointInfo`, `AccessPointConfiguration`, `ClientConfiguration`, `Capability`, `Configuration`, `WifiEvent`, `InternalWifiError`, `ScanTypeConfig`, `WifiState`, and `WifiMode` have been marked as `#[non_exhaustive]` (#3981, #4017)
 - The `Configuration`, `ClientConfiguration`, `AccessPointConfiguration`, and `EapClientConfiguration` enums have been renamed to `ModeConfig`, `ClientConfig`, `AccessPointConfig`, and `EapClientConfig` (#3994, #4278)
-- Error types implements `core::error:Error` (#3994, #4278)
+- Error types implement `core::error::Error` (#3994, #4278)
 - Use `esp-phy` internally for PHY initialization (#3892)
 - `ap_state()` and `sta_state()` marked as stable (#4017)
 - `wifi_state()` marked as unstable (#4017)
@@ -97,6 +143,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The default value of `wifi_max_burst_size` has been changed to 3 (#4231)
 - Set `ble_ll_sync_cnt` to 0 on C6, C2 and H2 as in esp-idf Kconfig default (#4241)
 - `esp_radio::wifi::WifiController::scan_with_config_sync` has been renamed to `scan_with_config` (#4294)
+- `wifi::AuthMethod` has been renamed to `wifi::AuthenticationMethod` (#4778)
+- `wifi::Bandwidth` is now `#[non_exhaustive]` (#4816)
 
 ### Fixed
 

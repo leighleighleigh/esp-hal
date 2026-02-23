@@ -136,7 +136,7 @@ impl OsMbufPool {
 pub(crate) struct OsMbuf {
     /// Current pointer to data in the structure
     om_data: *const u8,
-    /// Flags associated with this buffer, see OS_MBUF_F_* defintions
+    /// Flags associated with this buffer, see OS_MBUF_F_* definitions
     om_flags: u8,
     /// Length of packet header
     om_pkthdr_len: u8,
@@ -1054,7 +1054,7 @@ pub(crate) fn ble_init(config: &Config) -> PhyInitGuard<'static> {
 
         // turn on logging
         #[allow(static_mut_refs)]
-        #[cfg(all(feature = "sys-logs", esp32c2))]
+        #[cfg(all(feature = "print-logs-from-driver", esp32c2))]
         {
             extern "C" {
                 static mut g_ble_plf_log_level: u32;

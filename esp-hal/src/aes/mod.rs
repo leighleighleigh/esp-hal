@@ -677,7 +677,7 @@ pub mod dma {
             // cipher's state.
         },
         stop: |driver| {
-            // Drop the AES driver to conserve power when there is nothig to do (or when the driver
+            // Drop the AES driver to conserve power when there is nothing to do (or when the driver
             // was stopped).
             let driver = unsafe { AesDmaBackend::from_raw(driver) };
             driver.deinitialize()
@@ -838,14 +838,7 @@ pub mod dma {
                     let dma = unsafe { self.dma.clone_unchecked() };
                     let driver = super::Aes::new(peri).with_dma(dma);
 
-                    driver
-                        .aes
-                        .aes
-                        .bind_peri_interrupt(interrupt_handler.handler());
-                    driver
-                        .aes
-                        .aes
-                        .enable_peri_interrupt(interrupt_handler.priority());
+                    driver.aes.aes.bind_peri_interrupt(interrupt_handler);
 
                     driver
                 }
@@ -1319,6 +1312,17 @@ struct AesOperation {
     key: Key,
 }
 
+impl Clone for AesOperation {
+    fn clone(&self) -> Self {
+        Self {
+            mode: self.mode,
+            cipher_mode: self.cipher_mode,
+            buffers: self.buffers,
+            key: self.key.copy(),
+        }
+    }
+}
+
 // Safety: AesOperation is safe to share between threads, in the context of a WorkQueue. The
 // WorkQueue ensures that only a single location can access the data. All the internals, except
 // for the pointers, are Sync. The pointers are safe to share because they point at data that the
@@ -1344,7 +1348,7 @@ const BLOCKING_AES_VTABLE: VTable<AesOperation> = VTable {
         // manner and so they can't be cancelled.
     },
     stop: |driver| {
-        // Drop the AES driver to conserve power when there is nothig to do (or when the driver was
+        // Drop the AES driver to conserve power when there is nothing to do (or when the driver was
         // stopped).
         let driver = unsafe { AesBackend::from_raw(driver) };
         driver.deinitialize()
@@ -1487,6 +1491,7 @@ impl<'t, 'd> AesWorkQueueDriver<'t, 'd> {
 }
 
 /// An AES work queue user.
+#[derive(Clone)]
 pub struct AesContext {
     cipher_mode: CipherState,
     frontend: WorkQueueFrontend<AesOperation>,

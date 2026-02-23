@@ -3,16 +3,16 @@
 use alloc::string::String;
 use core::fmt;
 
-use enumset::EnumSet;
 use procmacros::BuilderLite;
 
+use super::ScanMethod;
 use crate::{
     WifiError,
-    wifi::{AuthMethod, Protocol, scan::ScanMethod},
+    wifi::{AuthenticationMethod, Protocols, Ssid},
 };
 
 /// Configuration for EAP-FAST authentication protocol.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[instability::unstable]
 pub struct EapFastConfig {
@@ -25,7 +25,7 @@ pub struct EapFastConfig {
 }
 
 /// Phase 2 authentication methods
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[instability::unstable]
 pub enum TtlsPhase2Method {
@@ -43,7 +43,7 @@ pub enum TtlsPhase2Method {
 
 impl TtlsPhase2Method {
     /// Maps the phase 2 method to a raw `u32` representation.
-    pub(crate) fn to_raw(&self) -> u32 {
+    pub(crate) fn to_raw(self) -> u32 {
         match self {
             TtlsPhase2Method::Eap => {
                 crate::sys::include::esp_eap_ttls_phase2_types_ESP_EAP_TTLS_PHASE2_EAP
@@ -67,16 +67,16 @@ impl TtlsPhase2Method {
 type CertificateAndKey = (&'static [u8], &'static [u8], Option<&'static [u8]>);
 
 /// Configuration for an EAP (Extensible Authentication Protocol) station.
-#[derive(BuilderLite, Clone, PartialEq, Eq)]
+#[derive(BuilderLite, Clone, PartialEq, Eq, Hash)]
 #[instability::unstable]
 pub struct EapStationConfig {
     /// The SSID of the network the station is connecting to.
-    #[builder_lite(reference)]
-    pub(crate) ssid: String,
+    #[builder_lite(skip_setter)]
+    pub(crate) ssid: Ssid,
     /// The BSSID (MAC Address) of the specific access point.
     pub(crate) bssid: Option<[u8; 6]>,
     /// The authentication method used for EAP.
-    pub(crate) auth_method: AuthMethod,
+    pub(crate) auth_method: AuthenticationMethod,
     /// The identity used during authentication.
     #[builder_lite(reference)]
     pub(crate) identity: Option<String>,
@@ -111,7 +111,7 @@ pub struct EapStationConfig {
     /// The specific Wi-Fi channel to use for the connection.
     pub(crate) channel: Option<u8>,
     /// The set of protocols supported by the access point.
-    pub(crate) protocols: EnumSet<Protocol>,
+    pub(crate) protocols: Protocols,
     /// Interval for station to listen to beacon from access point.
     ///
     /// The unit of listen interval is one beacon interval.
@@ -138,6 +138,12 @@ pub struct EapStationConfig {
 }
 
 impl EapStationConfig {
+    /// Set the SSID of the access point.
+    pub fn with_ssid(mut self, ssid: impl Into<Ssid>) -> Self {
+        self.ssid = ssid.into();
+        self
+    }
+
     pub(crate) fn validate(&self) -> Result<(), WifiError> {
         if self.ssid.len() > 32 {
             return Err(WifiError::InvalidArguments);
@@ -170,9 +176,9 @@ impl EapStationConfig {
 impl Default for EapStationConfig {
     fn default() -> Self {
         EapStationConfig {
-            ssid: String::new(),
+            ssid: Ssid::default(),
             bssid: None,
-            auth_method: AuthMethod::Wpa2Enterprise,
+            auth_method: AuthenticationMethod::Wpa2Enterprise,
             identity: None,
             username: None,
             password: None,
@@ -184,7 +190,7 @@ impl Default for EapStationConfig {
             ca_cert: None,
             certificate_and_key: None,
             ttls_phase2_method: None,
-            protocols: (Protocol::P802D11B | Protocol::P802D11BG | Protocol::P802D11BGN),
+            protocols: Protocols::default(),
             listen_interval: 3,
             beacon_timeout: 6,
             failure_retry_cnt: 1,

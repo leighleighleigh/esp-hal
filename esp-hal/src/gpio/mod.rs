@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, procmacros::doc_replace(
     "etm_availability" => {
-        cfg(soc_has_etm) => "The GPIO pins also provide tasks and events via the ETM interconnect system. For more information, see the [etm] module."
+        cfg(etm_driver_supported) => "The GPIO pins also provide tasks and events via the ETM interconnect system. For more information, see the [etm] module."
     }
 ))]
 //! # General Purpose Input/Output (GPIO)
@@ -55,7 +55,7 @@
 crate::unstable_module! {
     pub mod interconnect;
 
-    #[cfg(soc_has_etm)]
+    #[cfg(etm_driver_supported)]
     pub mod etm;
 
     #[cfg(soc_has_lp_io)]
@@ -63,6 +63,9 @@ crate::unstable_module! {
 
     #[cfg(all(soc_has_rtc_io, not(esp32)))]
     pub mod rtc_io;
+
+    #[cfg(dedicated_gpio_driver_supported)]
+    pub mod dedicated;
 }
 use interconnect::PeripheralOutput;
 
@@ -348,7 +351,7 @@ impl TryFrom<usize> for AlternateFunction {
 #[instability::unstable]
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[cfg(not(esp32h2))]
+#[cfg(not(any(esp32h2, esp32c5)))]
 pub enum RtcFunction {
     /// RTC mode.
     Rtc     = 0,
@@ -361,10 +364,10 @@ pub enum RtcFunction {
 
 /// Trait implemented by RTC pins
 #[instability::unstable]
-#[cfg(not(esp32h2))] // H2 has no low-power mux, but it's not currently encoded in metadata.
+#[cfg(not(esp32c5))]
 pub trait RtcPin: Pin {
     /// RTC number of the pin
-    #[cfg(xtensa)]
+    #[cfg(any(xtensa, esp32h2))]
     fn rtc_number(&self) -> u8;
 
     /// Configure the pin
@@ -385,15 +388,17 @@ pub trait RtcPin: Pin {
     unsafe fn apply_wakeup(&self, wakeup: bool, level: u8);
 }
 
-/// Trait implemented by RTC pins which supporting internal pull-up / pull-down
+/// Trait implemented by RTC pins which support internal pull-up / pull-down
 /// resistors.
 #[instability::unstable]
-#[cfg(not(esp32h2))]
+#[cfg(not(esp32c5))]
 pub trait RtcPinWithResistors: RtcPin {
     /// Enable/disable the internal pull-up resistor
+    #[cfg(not(esp32h2))]
     #[doc(hidden)]
     fn rtcio_pullup(&self, enable: bool);
     /// Enable/disable the internal pull-down resistor
+    #[cfg(not(esp32h2))]
     #[doc(hidden)]
     fn rtcio_pulldown(&self, enable: bool);
 }
@@ -630,13 +635,11 @@ impl<'d> Io<'d> {
     }
 
     /// Set the interrupt priority for GPIO interrupts.
-    ///
-    /// # Panics
-    ///
-    /// Panics if passed interrupt handler is invalid (e.g. has priority
-    /// `None`)
     #[instability::unstable]
     pub fn set_interrupt_priority(&self, prio: Priority) {
+        // FIXME: this sets priority on all cores where the handler may be running. Should we only
+        // change it on the current core? Should that enable the interrupt if it's not already
+        // enabled?
         interrupt::set_interrupt_priority(Interrupt::GPIO, prio);
     }
 
@@ -646,7 +649,7 @@ impl<'d> Io<'d> {
     )]
     #[cfg_attr(
         multi_core,
-        doc = "Registers an interrupt handler for all GPIO pins on the current core."
+        doc = "Registers an interrupt handler for all GPIO pins. Enables the interrupt on the current core."
     )]
     #[doc = ""]
     /// Note that when using interrupt handlers registered by this function, or
@@ -664,24 +667,17 @@ impl<'d> Io<'d> {
     ///
     /// [`listen()`]: Input::listen
     /// [`is_interrupt_set()`]: Input::is_interrupt_set
-    ///
-    /// # Panics
-    ///
-    /// Panics if passed interrupt handler is invalid (e.g. has priority
-    /// `None`)
     #[instability::unstable]
     pub fn set_interrupt_handler(&mut self, handler: InterruptHandler) {
         for core in crate::system::Cpu::other() {
             crate::interrupt::disable(core, Interrupt::GPIO);
         }
-        self.set_interrupt_priority(handler.priority());
-        unsafe {
-            crate::interrupt::bind_interrupt(
-                Interrupt::GPIO,
-                crate::interrupt::IsrCallback::new(user_gpio_interrupt_handler),
-            )
-        };
-        USER_INTERRUPT_HANDLER.store(handler.handler().aligned_ptr());
+        USER_INTERRUPT_HANDLER.store(handler.handler().callback());
+
+        crate::interrupt::bind_handler(
+            Interrupt::GPIO,
+            InterruptHandler::new(user_gpio_interrupt_handler, handler.priority()),
+        );
     }
 }
 
@@ -784,6 +780,7 @@ pub struct Output<'d> {
 }
 
 impl private::Sealed for Output<'_> {}
+impl private::Sealed for &mut Output<'_> {}
 
 impl<'d> Output<'d> {
     #[procmacros::doc_replace]
@@ -1048,6 +1045,7 @@ pub struct Input<'d> {
 }
 
 impl private::Sealed for Input<'_> {}
+impl private::Sealed for &mut Input<'_> {}
 
 impl<'d> Input<'d> {
     #[procmacros::doc_replace]
@@ -1335,6 +1333,7 @@ pub struct Flex<'d> {
 }
 
 impl private::Sealed for Flex<'_> {}
+impl private::Sealed for &mut Flex<'_> {}
 
 impl<'d> Flex<'d> {
     /// Create flexible pin driver for a [Pin].
@@ -2203,7 +2202,7 @@ fn pin_does_not_support_function(pin: u8, function: &str) {
     panic!("Pin {} is not an {}", pin, function)
 }
 
-#[cfg(not(esp32h2))]
+#[cfg(not(esp32c5))]
 macro_rules! for_each_rtcio_pin {
     (@impl $ident:ident, $target:ident, $gpio:ident, $code:tt) => {
         if $ident.number() == $crate::peripherals::$gpio::NUMBER {
@@ -2226,7 +2225,7 @@ macro_rules! for_each_rtcio_pin {
     };
 }
 
-#[cfg(not(esp32h2))]
+#[cfg(not(any(esp32h2, esp32c5)))]
 macro_rules! for_each_rtcio_output_pin {
     (@impl $ident:ident, $target:ident, $gpio:ident, $code:tt, $kind:literal) => {
         if $ident.number() == $crate::peripherals::$gpio::NUMBER {
@@ -2258,9 +2257,9 @@ macro_rules! for_each_rtcio_output_pin {
     };
 }
 
-#[cfg(not(esp32h2))]
+#[cfg(not(esp32c5))]
 impl RtcPin for AnyPin<'_> {
-    #[cfg(xtensa)]
+    #[cfg(any(xtensa, esp32h2))]
     fn rtc_number(&self) -> u8 {
         for_each_rtcio_pin! {
             (self, target) => { RtcPin::rtc_number(&target) };
@@ -2288,14 +2287,16 @@ impl RtcPin for AnyPin<'_> {
     }
 }
 
-#[cfg(not(esp32h2))]
+#[cfg(not(esp32c5))]
 impl RtcPinWithResistors for AnyPin<'_> {
+    #[cfg(not(esp32h2))]
     fn rtcio_pullup(&self, enable: bool) {
         for_each_rtcio_output_pin! {
             (self, target) => { RtcPinWithResistors::rtcio_pullup(&target, enable) };
         }
     }
 
+    #[cfg(not(esp32h2))]
     fn rtcio_pulldown(&self, enable: bool) {
         for_each_rtcio_output_pin! {
             (self, target) => { RtcPinWithResistors::rtcio_pulldown(&target, enable) };

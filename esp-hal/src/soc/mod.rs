@@ -1,12 +1,16 @@
 #![cfg_attr(not(feature = "rt"), expect(unused))]
 
-use core::ops::Range;
+use core::{ops::Range, sync::atomic::Ordering};
+
+use portable_atomic::AtomicU32;
+use procmacros::ram;
 
 pub use self::implementation::*;
 
 #[cfg_attr(esp32, path = "esp32/mod.rs")]
 #[cfg_attr(esp32c2, path = "esp32c2/mod.rs")]
 #[cfg_attr(esp32c3, path = "esp32c3/mod.rs")]
+#[cfg_attr(esp32c5, path = "esp32c5/mod.rs")]
 #[cfg_attr(esp32c6, path = "esp32c6/mod.rs")]
 #[cfg_attr(esp32h2, path = "esp32h2/mod.rs")]
 #[cfg_attr(esp32s2, path = "esp32s2/mod.rs")]
@@ -148,29 +152,29 @@ mod xtensa {
     extern "C" fn post_init() {
         naked_asm!(
             "
-            entry a1, 0
+            entry  a1, 0x10                            // 4 words for callx4 spill area
 
-            l32r   a6, sym_xtensa_lx_rt_zero_fill      // Pre-load address of zero-fill function
+            l32r   a2, sym_xtensa_lx_rt_zero_fill      // Pre-load address of zero-fill function
 
-            l32r   a10, sym_rtc_fast_bss_start         // Set input range to .rtc_fast.bss
-            l32r   a11, sym_rtc_fast_bss_end           //
-            callx8 a6                                  // Zero-fill
+            l32r   a6, sym_rtc_fast_bss_start          // Set input range to .rtc_fast.bss
+            l32r   a7, sym_rtc_fast_bss_end            //
+            callx4 a2                                  // Zero-fill
 
-            l32r   a10, sym_rtc_slow_bss_start         // Set input range to .rtc_slow.bss
-            l32r   a11, sym_rtc_slow_bss_end           //
-            callx8 a6                                  // Zero-fill
+            l32r   a6, sym_rtc_slow_bss_start          // Set input range to .rtc_slow.bss
+            l32r   a7, sym_rtc_slow_bss_end            //
+            callx4 a2                                  // Zero-fill
 
-            l32r   a5,  sym_init_persistent            // Do we need to initialize persistent data?
-            callx8 a5
-            beqz   a10, .Lpost_init_return             // If not, skip initialization
+            l32r   a3, sym_init_persistent             // Do we need to initialize persistent data?
+            callx4 a3
+            beqz   a6, .Lpost_init_return              // If not, skip initialization
 
-            l32r   a10, sym_rtc_fast_persistent_start  // Set input range to .rtc_fast.persistent
-            l32r   a11, sym_rtc_fast_persistent_end    //
-            callx8 a6                                  // Zero-fill
+            l32r   a6, sym_rtc_fast_persistent_start   // Set input range to .rtc_fast.persistent
+            l32r   a7, sym_rtc_fast_persistent_end     //
+            callx4 a2                                  // Zero-fill
 
-            l32r   a10, sym_rtc_slow_persistent_start  // Set input range to .rtc_slow.persistent
-            l32r   a11, sym_rtc_slow_persistent_end    //
-            callx8 a6                                  // Zero-fill
+            l32r   a6, sym_rtc_slow_persistent_start   // Set input range to .rtc_slow.persistent
+            l32r   a7, sym_rtc_slow_persistent_end     //
+            callx4 a2                                  // Zero-fill
 
         .Lpost_init_return:
             retw.n
@@ -184,12 +188,14 @@ mod xtensa {
         "
         .literal sym_stack_chk_guard, {__stack_chk_guard}
         .literal stack_guard_value, {stack_guard_value}
+        .literal sym_esp32_init, {__esp32_init}
         ",
         __stack_chk_guard = sym __stack_chk_guard,
         stack_guard_value = const esp_config::esp_config_int!(
             u32,
             "ESP_HAL_CONFIG_STACK_GUARD_VALUE"
-        )
+        ),
+        __esp32_init = sym esp32_init,
     );
 
     #[cfg_attr(esp32s3, unsafe(link_section = ".rwtext"))]
@@ -199,18 +205,18 @@ mod xtensa {
         // Set up stack protector value before jumping to a rust function
         naked_asm! {
             "
-            entry a1, 0x20
+            entry a1, 0x10 // 4 words for callx4 spill area
 
             // Set up the stack protector value
             l32r   a2, sym_stack_chk_guard
             l32r   a3, stack_guard_value
             s32i.n a3, a2, 0
 
-            call8 {esp32_init}
+            l32r   a2, sym_esp32_init
+            callx4 a2
 
             retw.n
-            ",
-            esp32_init = sym esp32_init
+            "
         }
     }
 
@@ -260,10 +266,13 @@ pub(crate) fn enable_main_stack_guard_monitoring() {
 }
 
 #[cfg(all(riscv, write_vec_table_monitoring))]
+pub(crate) fn trap_section_protected() -> bool {
+    cfg!(stack_guard_monitoring_with_debugger_connected) || !crate::debugger::debugger_connected()
+}
+
+#[cfg(all(riscv, write_vec_table_monitoring))]
 pub(crate) fn setup_trap_section_protection() {
-    if !cfg!(stack_guard_monitoring_with_debugger_connected)
-        && crate::debugger::debugger_connected()
-    {
+    if !trap_section_protected() {
         return;
     }
 
@@ -293,4 +302,63 @@ pub(crate) fn setup_trap_section_protection() {
     unsafe {
         crate::debugger::set_watchpoint(1, addr, len);
     }
+}
+
+static CHIP_REVISION: AtomicU32 = AtomicU32::new(0);
+const LOADED: u32 = 1 << 31;
+
+#[cold]
+fn load_chip_revision_from_efuse() -> u16 {
+    let chip_revision = crate::efuse::Efuse::chip_revision();
+    CHIP_REVISION.store(chip_revision as u32 | LOADED, Ordering::Release);
+    chip_revision
+}
+
+#[ram]
+fn load_chip_revision() -> u16 {
+    let stored = CHIP_REVISION.load(Ordering::Acquire);
+    if stored & LOADED == 0 {
+        return load_chip_revision_from_efuse();
+    }
+    (stored & u16::MAX as u32) as u16
+}
+
+fn chip_revision_in_range(range: Range<u16>) -> bool {
+    const BUILD_TIME_MIN_REV: u16 =
+        esp_config::esp_config_int!(u16, "ESP_HAL_CONFIG_MIN_CHIP_REVISION");
+
+    // Check to determine chip is obviously in or out of range, without reading efuse
+    #[allow(
+        clippy::absurd_extreme_comparisons,
+        reason = "Not absurd depending on configuration"
+    )]
+    if range.end < BUILD_TIME_MIN_REV {
+        // Chip will not boot in this range
+        return false;
+    }
+
+    #[allow(
+        clippy::absurd_extreme_comparisons,
+        reason = "Not absurd depending on configuration"
+    )]
+    if range.start <= BUILD_TIME_MIN_REV && range.end == u16::MAX {
+        return true;
+    }
+
+    let chip_revision = load_chip_revision();
+
+    range.contains(&chip_revision)
+}
+
+/// Returns true if the chip revision is at least the given revision.
+#[allow(dead_code)]
+pub(crate) fn chip_revision_above(min: u16) -> bool {
+    chip_revision_in_range(min..u16::MAX)
+}
+
+/// Returns true if the chip is at least the given revision, in the same major version.
+#[allow(dead_code)]
+pub(crate) fn chip_minor_revision_above(rev: u16) -> bool {
+    let max = (rev + 1).next_multiple_of(100);
+    chip_revision_in_range(rev..max)
 }

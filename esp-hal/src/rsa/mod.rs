@@ -58,7 +58,11 @@ impl RsaMemoryPowerGuard {
     fn new() -> Self {
         crate::peripherals::SYSTEM::regs()
             .rsa_pd_ctrl()
-            .modify(|_, w| w.rsa_mem_pd().clear_bit());
+            .modify(|_, w| {
+                w.rsa_mem_force_pd().clear_bit();
+                w.rsa_mem_force_pu().set_bit();
+                w.rsa_mem_pd().clear_bit()
+            });
         Self
     }
 }
@@ -68,7 +72,11 @@ impl Drop for RsaMemoryPowerGuard {
     fn drop(&mut self) {
         crate::peripherals::SYSTEM::regs()
             .rsa_pd_ctrl()
-            .modify(|_, w| w.rsa_mem_pd().set_bit());
+            .modify(|_, w| {
+                w.rsa_mem_force_pd().clear_bit();
+                w.rsa_mem_force_pu().clear_bit();
+                w.rsa_mem_pd().set_bit()
+            });
     }
 }
 
@@ -121,9 +129,7 @@ impl<'d> Rsa<'d, Blocking> {
     #[instability::unstable]
     pub fn set_interrupt_handler(&mut self, handler: InterruptHandler) {
         self.rsa.disable_peri_interrupt();
-
-        self.rsa.bind_peri_interrupt(handler.handler());
-        self.rsa.enable_peri_interrupt(handler.priority());
+        self.rsa.bind_peri_interrupt(handler);
     }
 }
 
@@ -1060,6 +1066,7 @@ impl<'t, 'd> RsaWorkQueueDriver<'t, 'd> {
     }
 }
 
+#[derive(Clone)]
 struct RsaWorkItem {
     // Acceleration options
     #[cfg(not(esp32))]
@@ -1075,6 +1082,7 @@ struct RsaWorkItem {
 unsafe impl Sync for RsaWorkItem {}
 unsafe impl Send for RsaWorkItem {}
 
+#[derive(Clone)]
 enum RsaOperation {
     // Z = X * Y
     // len(Z) = len(X) + len(Y)
@@ -1128,6 +1136,7 @@ fn rsa_work_queue_handler() {
     options using [enable_search_acceleration][Self::enable_search_acceleration] and
     [enable_acceleration][Self::enable_acceleration] when appropriate."
 )]
+#[derive(Clone)]
 pub struct RsaContext {
     frontend: WorkQueueFrontend<RsaWorkItem>,
 }

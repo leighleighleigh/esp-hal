@@ -11,7 +11,7 @@
 //! variable before running this example.
 
 //% FEATURES: esp-radio esp-radio/wifi esp-radio/unstable esp-hal/unstable
-//% CHIPS: esp32 esp32c2 esp32c3 esp32c6 esp32s2 esp32s3
+//% CHIPS: esp32 esp32c2 esp32c3 esp32c5 esp32c6 esp32s2 esp32s3
 
 #![allow(static_mut_refs)]
 #![no_std]
@@ -33,14 +33,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use esp_println::println;
-use esp_radio::wifi::{
-    ModeConfig,
-    WifiController,
-    WifiDevice,
-    WifiEvent,
-    WifiStationState,
-    sta::StationConfig,
-};
+use esp_radio::wifi::{Config, Interface, WifiController, sta::StationConfig};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -107,23 +100,22 @@ async fn main(spawner: Spawner) -> ! {
         seed,
     );
 
+    let station_config = Config::Station(
+        StationConfig::default()
+            .with_ssid(SSID)
+            .with_password(PASSWORD.into()),
+    );
+    println!("Starting wifi");
+    controller.set_config(&station_config).unwrap();
+    println!("Wifi started!");
+
     spawner.spawn(connection(controller)).ok();
     spawner.spawn(net_task(runner)).ok();
 
-    loop {
-        if stack.is_link_up() {
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
-    }
+    stack.wait_config_up().await;
 
-    println!("Waiting to get IP address...");
-    loop {
-        if let Some(config) = stack.config_v4() {
-            println!("Got IP: {}", config.address);
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
+    if let Some(config) = stack.config_v4() {
+        println!("Got IP: {}", config.address);
     }
 
     let mut socket = TcpSocket::new(
@@ -144,43 +136,29 @@ async fn main(spawner: Spawner) -> ! {
 #[embassy_executor::task]
 async fn connection(mut controller: WifiController<'static>) {
     println!("start connection task");
-    println!("Device capabilities: {:?}", controller.capabilities());
+
     loop {
-        match esp_radio::wifi::station_state() {
-            WifiStationState::Connected => {
-                // wait until we're no longer connected
-                controller
-                    .wait_for_event(WifiEvent::StationDisconnected)
-                    .await;
-                Timer::after(Duration::from_millis(5000)).await
-            }
-            _ => {}
-        }
-        if !matches!(controller.is_started(), Ok(true)) {
-            let station_config = ModeConfig::Station(
-                StationConfig::default()
-                    .with_ssid(SSID.into())
-                    .with_password(PASSWORD.into()),
-            );
-            controller.set_config(&station_config).unwrap();
-            println!("Starting wifi");
-            controller.start_async().await.unwrap();
-            println!("Wifi started!");
-        }
         println!("About to connect...");
 
         match controller.connect_async().await {
-            Ok(_) => println!("Wifi connected!"),
+            Ok(info) => {
+                println!("Wifi connected to {:?}", info);
+
+                // wait until we're no longer connected
+                let info = controller.wait_for_disconnect_async().await.ok();
+                println!("Disconnected: {:?}", info);
+            }
             Err(e) => {
                 println!("Failed to connect to wifi: {e:?}");
-                Timer::after(Duration::from_millis(5000)).await
             }
         }
+
+        Timer::after(Duration::from_millis(5000)).await
     }
 }
 
 #[embassy_executor::task]
-async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
+async fn net_task(mut runner: Runner<'static, Interface<'static>>) {
     runner.run().await
 }
 

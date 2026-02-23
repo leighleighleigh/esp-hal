@@ -38,10 +38,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
 
 jobs:
+  get-labels:
+    uses: ./.github/workflows/get-labels.yml
+
   # --------------------------------------------------------------------------
   # Build Packages
-
   esp-hal:
+    needs: get-labels
     runs-on: macos-m1-self-hosted
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -51,6 +54,7 @@ jobs:
       STATIC_IP: 1.1.1.1
       GATEWAY_IP: 1.1.1.1
       HOST_IP: 1.1.1.1
+      SKIP_CI: ${{ contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
 
     strategy:
       fail-fast: false
@@ -61,30 +65,37 @@ jobs:
           - riscv
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Skip CI
+        if: env.SKIP_CI == 'true'
+        run: |
+          echo "skipping"
+
+      - uses: actions/checkout@v6
+        if: env.SKIP_CI != 'true'
 
       # Install the Rust toolchain for Xtensa devices:
       - uses: esp-rs/xtensa-toolchain@v1.6
-        if: matrix.group == 'xtensa'
+        if: env.SKIP_CI != 'true' && matrix.group == 'xtensa'
         with:
-          version: 1.90.0.0
+          version: 1.93.0.0
 
       # Install the Rust stable toolchain for RISC-V devices:
       - uses: dtolnay/rust-toolchain@v1
-        if: matrix.group == 'riscv'
+        if: env.SKIP_CI != 'true' && matrix.group == 'riscv'
         with:
           target: riscv32imc-unknown-none-elf,riscv32imac-unknown-none-elf
           toolchain: stable
           components: rust-src
 
       - name: Setup cargo-batch
+        if: env.SKIP_CI != 'true'
         run: |
           if ! command -v cargo-batch &> /dev/null; then
               cargo install --git https://github.com/embassy-rs/cargo-batch cargo --bin cargo-batch --locked --force
           fi
 
       - name: Build and Check Xtensa
-        if: matrix.group == 'xtensa'
+        if: env.SKIP_CI != 'true' && matrix.group == 'xtensa'
         shell: bash
         run: |
           # lints and docs are checked separately
@@ -93,26 +104,33 @@ jobs:
           cargo xcheck ci esp32s3 --toolchain esp --no-lint --no-docs
 
       - name: Build and Check RISC-V
-        if: matrix.group == 'riscv'
+        if: env.SKIP_CI != 'true' && matrix.group == 'riscv'
         shell: bash
         run: |
           # lints and docs are checked separately
           cargo xcheck ci esp32c2 --toolchain stable --no-lint --no-docs
           cargo xcheck ci esp32c3 --toolchain stable --no-lint --no-docs
+          cargo xcheck ci esp32c5 --toolchain stable --no-lint --no-docs
           cargo xcheck ci esp32c6 --toolchain stable --no-lint --no-docs
           cargo xcheck ci esp32h2 --toolchain stable --no-lint --no-docs
 
   detect-extras-runner:
-    uses: ./.github/workflows/check_runner.yml
+    needs: get-labels
+    if: ${{ github.event_name != 'pull_request' ||
+      !contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
+    uses: ./.github/workflows/check-runner.yml
     with:
       primary-runner: macos-m1-self-hosted
       fallback-runner: ubuntu-latest
 
   extras:
-    needs: detect-extras-runner
+    needs: [get-labels, detect-extras-runner]
+    if: ${{ github.event_name != 'pull_request' ||
+      !contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
     runs-on: ${{ needs.detect-extras-runner.outputs.selected-runner }}
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
@@ -130,6 +148,9 @@ jobs:
         run: cd extras/ieee802154-sniffer && cargo build
 
   docs:
+    needs: get-labels
+    if: ${{ github.event_name != 'pull_request' ||
+      !contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -140,7 +161,7 @@ jobs:
           - riscv
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Install the Rust toolchain for Xtensa devices:
       - uses: esp-rs/xtensa-toolchain@v1.6
@@ -168,13 +189,16 @@ jobs:
       - name: Build RISC-V docs
         if: matrix.group == 'riscv'
         shell: bash
-        run: cargo xtask build documentation --chips esp32c2,esp32c3,esp32c6,esp32h2
+        run: cargo xtask build documentation --chips esp32c2,esp32c3,esp32c5,esp32c6,esp32h2
 
   # --------------------------------------------------------------------------
   # MSRV
 
   msrv:
+    needs: get-labels
     runs-on: ubuntu-latest
+    env:
+      SKIP_CI: ${{ contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
 
     strategy:
       fail-fast: false
@@ -184,35 +208,42 @@ jobs:
           - riscv
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Skip CI
+        if: env.SKIP_CI == 'true'
+        run: |
+          echo "skipping"
+
+      - uses: actions/checkout@v6
+        if: env.SKIP_CI != 'true'
+
       - uses: esp-rs/xtensa-toolchain@v1.6
-        if: matrix.group == 'xtensa'
+        if: env.SKIP_CI != 'true' && matrix.group == 'xtensa'
         with:
           version: ${{ env.MSRV }}
 
       - name: esp toolchain checks
-        if: matrix.group == 'xtensa'
+        if: env.SKIP_CI != 'true' && matrix.group == 'xtensa'
         run: rustc +esp --version --verbose
 
       - uses: dtolnay/rust-toolchain@v1
-        if: matrix.group == 'riscv'
+        if: env.SKIP_CI != 'true' && matrix.group == 'riscv'
         with:
           target: riscv32imc-unknown-none-elf,riscv32imac-unknown-none-elf,x86_64-unknown-linux-gnu
           toolchain: ${{ env.MSRV }}
           components: rust-src,clippy
 
       - name: Stable toolchain checks
-        if: matrix.group == 'riscv'
+        if: env.SKIP_CI != 'true' && matrix.group == 'riscv'
         run: rustc +${{ env.MSRV }} --version --verbose
 
       # Verify the MSRV for all chips by running a lint session
       - name: msrv RISC-V (esp-hal)
-        if: matrix.group == 'riscv'
+        if: env.SKIP_CI != 'true' && matrix.group == 'riscv'
         run: |
-          cargo xtask lint-packages --chips esp32c2,esp32c3,esp32c6,esp32h2 --toolchain ${{ env.MSRV }}
+          cargo xtask lint-packages --chips esp32c2,esp32c3,esp32c5,esp32c6,esp32h2 --toolchain ${{ env.MSRV }}
 
       - name: msrv Xtensa (esp-hal)
-        if: matrix.group == 'xtensa'
+        if: env.SKIP_CI != 'true' && matrix.group == 'xtensa'
         run: |
           cargo xtask lint-packages --chips esp32,esp32s2,esp32s3 --toolchain esp
 
@@ -220,16 +251,21 @@ jobs:
   # host tests
 
   detect-host-tests-runner:
-    uses: ./.github/workflows/check_runner.yml
+    needs: get-labels
+    if: ${{ github.event_name != 'pull_request' ||
+      !contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
+    uses: ./.github/workflows/check-runner.yml
     with:
       primary-runner: macos-m1-self-hosted
       fallback-runner: ubuntu-latest
 
   host-tests:
     needs: detect-host-tests-runner
+    if: ${{ github.event_name != 'pull_request' ||
+      !contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
     runs-on: ${{ needs.detect-host-tests-runner.outputs.selected-runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Some of the configuration items in 'rustfmt.toml' require the 'nightly'
       # release channel, MIRI is only available in nightly
       - uses: dtolnay/rust-toolchain@v1
@@ -254,9 +290,12 @@ jobs:
   # Check links in .rs, .md, and .toml files
 
   link-check:
+    needs: get-labels
+    if: ${{ github.event_name != 'pull_request' ||
+      !contains(needs.get-labels.outputs.labels, 'skip-ci-non-code-change') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: lycheeverse/lychee-action@v2
         with:
           args: >
@@ -291,38 +330,41 @@ jobs:
       fail-fast: false
       matrix:
         target:
-        - soc: esp32c2
-          rust-target: riscv32imc-unknown-none-elf
-          runner: esp32c2-jtag
-          host: aarch64
-        - soc: esp32c3
-          rust-target: riscv32imc-unknown-none-elf
-          runner: esp32c3-usb
-          host: armv7
-        - soc: esp32c6
-          rust-target: riscv32imac-unknown-none-elf
-          runner: esp32c6-usb
-          host: armv7
-        - soc: esp32h2
-          rust-target: riscv32imac-unknown-none-elf
-          runner: esp32h2-usb
-          host: armv7
-        - soc: esp32
-          rust-target: xtensa-esp32-none-elf
-          runner: esp32-jtag
-          host: aarch64
-        - soc: esp32s2
-          rust-target: xtensa-esp32s2-none-elf
-          runner: esp32s2-jtag
-          host: armv7
-        - soc: esp32s3
-          rust-target: xtensa-esp32s3-none-elf
-          runner: esp32s3-usb
-          host: armv7
+          - soc: esp32c2
+            rust-target: riscv32imc-unknown-none-elf
+            runner: esp32c2-jtag
+            host: aarch64
+          - soc: esp32c3
+            rust-target: riscv32imc-unknown-none-elf
+            runner: esp32c3-usb
+            host: armv7
+          - soc: esp32c5
+            rust-target: riscv32imac-unknown-none-elf
+            runner: esp32c5-usb
+            host: aarch64
+          - soc: esp32c6
+            rust-target: riscv32imac-unknown-none-elf
+            runner: esp32c6-usb
+            host: armv7
+          - soc: esp32h2
+            rust-target: riscv32imac-unknown-none-elf
+            runner: esp32h2-usb
+            host: armv7
+          - soc: esp32
+            rust-target: xtensa-esp32-none-elf
+            runner: esp32-jtag
+            host: aarch64
+          - soc: esp32s2
+            rust-target: xtensa-esp32s2-none-elf
+            runner: esp32s2-jtag
+            host: armv7
+          - soc: esp32s3
+            rust-target: xtensa-esp32s3-none-elf
+            runner: esp32s3-usb
+            host: armv7
 
     steps:
       - name: Dummy placeholder for HIL test builds
         run: |
           echo "NOOP: Dummy build-tests-full for ${{ matrix.target.soc }}."
           echo "Real HIL test builds run only in hil.yml (merge_group or /hil full)."
-

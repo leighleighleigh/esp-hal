@@ -37,6 +37,8 @@ pub(crate) mod sys {
     pub use esp_wifi_sys_esp32c2::*;
     #[cfg(esp32c3)]
     pub use esp_wifi_sys_esp32c3::*;
+    #[cfg(esp32c5)]
+    pub use esp_wifi_sys_esp32c5::*;
     #[cfg(esp32c6)]
     pub use esp_wifi_sys_esp32c6::*;
     #[cfg(esp32h2)]
@@ -349,9 +351,9 @@ macro_rules! impl_phy_controller {
         impl<'d> PhyController<'d> for esp_hal::peripherals::$peripheral<'d> {}
     };
 }
-impl_phy_controller!(wifi, WIFI);
-impl_phy_controller!(bt, BT);
-impl_phy_controller!(ieee802154, IEEE802154);
+impl_phy_controller!(soc_has_wifi, WIFI);
+impl_phy_controller!(soc_has_bt, BT);
+impl_phy_controller!(soc_has_ieee802154, IEEE802154);
 
 #[cfg(esp32)]
 /// Trait providing MAC time functionality for the Wi-Fi peripheral.

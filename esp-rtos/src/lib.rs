@@ -77,9 +77,9 @@ use core::mem::MaybeUninit;
 
 #[cfg(feature = "alloc")]
 pub(crate) use esp_alloc::InternalMemory;
-#[cfg(systimer)]
+#[cfg(systimer_driver_supported)]
 use esp_hal::timer::systimer::Alarm;
-#[cfg(timergroup)]
+#[cfg(timergroup_driver_supported)]
 use esp_hal::timer::timg::Timer;
 use esp_hal::{
     Blocking,
@@ -212,9 +212,9 @@ mod private {
 
 impl private::Sealed for TimeBase {}
 impl private::Sealed for AnyTimer<'static> {}
-#[cfg(timergroup)]
+#[cfg(timergroup_driver_supported)]
 impl private::Sealed for Timer<'static> {}
-#[cfg(systimer)]
+#[cfg(systimer_driver_supported)]
 impl private::Sealed for Alarm<'static> {}
 
 impl TimerSource for TimeBase {
@@ -229,14 +229,14 @@ impl TimerSource for AnyTimer<'static> {
     }
 }
 
-#[cfg(timergroup)]
+#[cfg(timergroup_driver_supported)]
 impl TimerSource for Timer<'static> {
     fn timer(self) -> TimeBase {
         TimeBase::new(self.degrade())
     }
 }
 
-#[cfg(systimer)]
+#[cfg(systimer_driver_supported)]
 impl TimerSource for Alarm<'static> {
     fn timer(self) -> TimeBase {
         TimeBase::new(self.degrade())
@@ -296,8 +296,16 @@ pub fn start_with_idle_hook(
         rtos_trace::trace::start();
     }
 
+    fn is_thread_mode() -> bool {
+        esp_hal::interrupt::RunLevel::current().is_thread()
+    }
+
     trace!("Starting scheduler for the first core");
     assert_eq!(Cpu::current(), Cpu::ProCpu);
+    assert!(
+        is_thread_mode(),
+        "esp_rtos::start must not be called from an interrupt handler"
+    );
 
     SCHEDULER.with(move |scheduler| {
         scheduler.setup(TimeDriver::new(timer.timer()), idle_hook);

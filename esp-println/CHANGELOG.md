@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Initial ESP32-C5 support (#4859)
 
 ### Changed
 
 
 ### Fixed
 
+- Fully resolved `Result` types in macros to avoid strange errors when users import the name elsewhere (#4719)
 
 ### Removed
 

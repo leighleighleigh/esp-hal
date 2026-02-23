@@ -36,32 +36,50 @@ macro_rules! property {
     ("trm") => {
         "https://www.espressif.com/sites/default/files/documentation/esp8684_technical_reference_manual_en.pdf"
     };
-    ("soc.cpu_has_csr_pc") => {
-        true
-    };
-    ("soc.cpu_has_prv_mode") => {
-        false
-    };
-    ("soc.rc_fast_clk_default") => {
-        17500000
-    };
-    ("soc.rc_fast_clk_default", str) => {
-        stringify!(17500000)
-    };
-    ("soc.rc_slow_clock") => {
-        136000
-    };
-    ("soc.rc_slow_clock", str) => {
-        stringify!(136000)
-    };
-    ("soc.has_multiple_xtal_options") => {
-        true
-    };
     ("assist_debug.has_sp_monitor") => {
         true
     };
     ("assist_debug.has_region_monitor") => {
         false
+    };
+    ("bt.controller") => {
+        "npl"
+    };
+    ("dedicated_gpio.needs_initialization") => {
+        false
+    };
+    ("dedicated_gpio.channel_count") => {
+        8
+    };
+    ("dedicated_gpio.channel_count", str) => {
+        stringify!(8)
+    };
+    ("dma.kind") => {
+        "gdma"
+    };
+    ("dma.supports_mem2mem") => {
+        true
+    };
+    ("dma.separate_in_out_interrupts") => {
+        false
+    };
+    ("dma.max_priority") => {
+        9
+    };
+    ("dma.max_priority", str) => {
+        stringify!(9)
+    };
+    ("dma.gdma_version") => {
+        1
+    };
+    ("dma.gdma_version", str) => {
+        stringify!(1)
+    };
+    ("ecc.working_modes") => {
+        7
+    };
+    ("ecc.working_modes", str) => {
+        stringify!(7)
     };
     ("gpio.has_bank_1") => {
         false
@@ -159,35 +177,68 @@ macro_rules! property {
     ("interrupts.status_registers", str) => {
         stringify!(2)
     };
+    ("interrupts.disabled_interrupt") => {
+        0
+    };
+    ("phy.combo_module") => {
+        true
+    };
     ("rng.apb_cycle_wait_num") => {
         16
     };
     ("rng.apb_cycle_wait_num", str) => {
         stringify!(16)
     };
+    ("rng.trng_supported") => {
+        true
+    };
     ("sha.dma") => {
+        true
+    };
+    ("sleep.light_sleep") => {
+        true
+    };
+    ("sleep.deep_sleep") => {
+        true
+    };
+    ("soc.cpu_has_branch_predictor") => {
+        false
+    };
+    ("soc.cpu_has_csr_pc") => {
+        true
+    };
+    ("soc.multi_core_enabled") => {
+        false
+    };
+    ("soc.rc_fast_clk_default") => {
+        17500000
+    };
+    ("soc.rc_fast_clk_default", str) => {
+        stringify!(17500000)
+    };
+    ("spi_master.supports_dma") => {
         true
     };
     ("spi_master.has_octal") => {
         false
+    };
+    ("spi_master.has_app_interrupts") => {
+        true
+    };
+    ("spi_master.has_dma_segmented_transfer") => {
+        true
+    };
+    ("spi_master.has_clk_pre_div") => {
+        false
+    };
+    ("spi_slave.supports_dma") => {
+        true
     };
     ("timergroup.timg_has_timer1") => {
         false
     };
     ("timergroup.timg_has_divcnt_rst") => {
         true
-    };
-    ("timergroup.default_clock_source") => {
-        0
-    };
-    ("timergroup.default_clock_source", str) => {
-        stringify!(0)
-    };
-    ("timergroup.default_wdt_clock_source") => {
-        0
-    };
-    ("timergroup.default_wdt_clock_source", str) => {
-        stringify!(0)
     };
     ("uart.ram_size") => {
         128
@@ -201,20 +252,152 @@ macro_rules! property {
     ("wifi.has_wifi6") => {
         false
     };
-    ("bt.controller") => {
-        "npl"
+    ("wifi.mac_version") => {
+        1
     };
-    ("phy.combo_module") => {
-        true
+    ("wifi.mac_version", str) => {
+        stringify!(1)
+    };
+    ("wifi.has_5g") => {
+        false
     };
 }
 #[macro_export]
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
-macro_rules! for_each_soc_xtal_options {
+macro_rules! for_each_dedicated_gpio {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((26)); _for_each_inner!((40)); _for_each_inner!((all(26),
-        (40)));
+        macro_rules! _for_each_inner_dedicated_gpio { $(($pattern) => $code;)* ($other :
+        tt) => {} } _for_each_inner_dedicated_gpio!((0));
+        _for_each_inner_dedicated_gpio!((1)); _for_each_inner_dedicated_gpio!((2));
+        _for_each_inner_dedicated_gpio!((3)); _for_each_inner_dedicated_gpio!((4));
+        _for_each_inner_dedicated_gpio!((5)); _for_each_inner_dedicated_gpio!((6));
+        _for_each_inner_dedicated_gpio!((7)); _for_each_inner_dedicated_gpio!((0, 0,
+        CPU_GPIO_0)); _for_each_inner_dedicated_gpio!((0, 1, CPU_GPIO_1));
+        _for_each_inner_dedicated_gpio!((0, 2, CPU_GPIO_2));
+        _for_each_inner_dedicated_gpio!((0, 3, CPU_GPIO_3));
+        _for_each_inner_dedicated_gpio!((0, 4, CPU_GPIO_4));
+        _for_each_inner_dedicated_gpio!((0, 5, CPU_GPIO_5));
+        _for_each_inner_dedicated_gpio!((0, 6, CPU_GPIO_6));
+        _for_each_inner_dedicated_gpio!((0, 7, CPU_GPIO_7));
+        _for_each_inner_dedicated_gpio!((channels(0), (1), (2), (3), (4), (5), (6),
+        (7))); _for_each_inner_dedicated_gpio!((signals(0, 0, CPU_GPIO_0), (0, 1,
+        CPU_GPIO_1), (0, 2, CPU_GPIO_2), (0, 3, CPU_GPIO_3), (0, 4, CPU_GPIO_4), (0, 5,
+        CPU_GPIO_5), (0, 6, CPU_GPIO_6), (0, 7, CPU_GPIO_7)));
+    };
+}
+#[macro_export]
+#[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
+macro_rules! for_each_interrupt {
+    ($($pattern:tt => $code:tt;)*) => {
+        macro_rules! _for_each_inner_interrupt { $(($pattern) => $code;)* ($other : tt)
+        => {} } _for_each_inner_interrupt!(([disabled 0] 0));
+        _for_each_inner_interrupt!(([direct_bindable 0] 1));
+        _for_each_inner_interrupt!(([direct_bindable 1] 2));
+        _for_each_inner_interrupt!(([direct_bindable 2] 3));
+        _for_each_inner_interrupt!(([direct_bindable 3] 4));
+        _for_each_inner_interrupt!(([direct_bindable 4] 5));
+        _for_each_inner_interrupt!(([direct_bindable 5] 6));
+        _for_each_inner_interrupt!(([direct_bindable 6] 7));
+        _for_each_inner_interrupt!(([direct_bindable 7] 8));
+        _for_each_inner_interrupt!(([direct_bindable 8] 9));
+        _for_each_inner_interrupt!(([direct_bindable 9] 10));
+        _for_each_inner_interrupt!(([direct_bindable 10] 11));
+        _for_each_inner_interrupt!(([direct_bindable 11] 12));
+        _for_each_inner_interrupt!(([direct_bindable 12] 13));
+        _for_each_inner_interrupt!(([direct_bindable 13] 14));
+        _for_each_inner_interrupt!(([direct_bindable 14] 15));
+        _for_each_inner_interrupt!(([direct_bindable 15] 16));
+        _for_each_inner_interrupt!(([vector 0] 17)); _for_each_inner_interrupt!(([vector
+        1] 18)); _for_each_inner_interrupt!(([vector 2] 19));
+        _for_each_inner_interrupt!(([vector 3] 20)); _for_each_inner_interrupt!(([vector
+        4] 21)); _for_each_inner_interrupt!(([vector 5] 22));
+        _for_each_inner_interrupt!(([vector 6] 23)); _for_each_inner_interrupt!(([vector
+        7] 24)); _for_each_inner_interrupt!(([vector 8] 25));
+        _for_each_inner_interrupt!(([vector 9] 26)); _for_each_inner_interrupt!(([vector
+        10] 27)); _for_each_inner_interrupt!(([vector 11] 28));
+        _for_each_inner_interrupt!(([vector 12] 29)); _for_each_inner_interrupt!(([vector
+        13] 30)); _for_each_inner_interrupt!(([vector 14] 31));
+        _for_each_inner_interrupt!((all([disabled 0] 0), ([direct_bindable 0] 1),
+        ([direct_bindable 1] 2), ([direct_bindable 2] 3), ([direct_bindable 3] 4),
+        ([direct_bindable 4] 5), ([direct_bindable 5] 6), ([direct_bindable 6] 7),
+        ([direct_bindable 7] 8), ([direct_bindable 8] 9), ([direct_bindable 9] 10),
+        ([direct_bindable 10] 11), ([direct_bindable 11] 12), ([direct_bindable 12] 13),
+        ([direct_bindable 13] 14), ([direct_bindable 14] 15), ([direct_bindable 15] 16),
+        ([vector 0] 17), ([vector 1] 18), ([vector 2] 19), ([vector 3] 20), ([vector 4]
+        21), ([vector 5] 22), ([vector 6] 23), ([vector 7] 24), ([vector 8] 25), ([vector
+        9] 26), ([vector 10] 27), ([vector 11] 28), ([vector 12] 29), ([vector 13] 30),
+        ([vector 14] 31)));
+    };
+}
+#[macro_export]
+#[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
+macro_rules! for_each_interrupt_priority {
+    ($($pattern:tt => $code:tt;)*) => {
+        macro_rules! _for_each_inner_interrupt_priority { $(($pattern) => $code;)*
+        ($other : tt) => {} } _for_each_inner_interrupt_priority!((0, 1, Priority1));
+        _for_each_inner_interrupt_priority!((1, 2, Priority2));
+        _for_each_inner_interrupt_priority!((2, 3, Priority3));
+        _for_each_inner_interrupt_priority!((3, 4, Priority4));
+        _for_each_inner_interrupt_priority!((4, 5, Priority5));
+        _for_each_inner_interrupt_priority!((5, 6, Priority6));
+        _for_each_inner_interrupt_priority!((6, 7, Priority7));
+        _for_each_inner_interrupt_priority!((7, 8, Priority8));
+        _for_each_inner_interrupt_priority!((8, 9, Priority9));
+        _for_each_inner_interrupt_priority!((9, 10, Priority10));
+        _for_each_inner_interrupt_priority!((10, 11, Priority11));
+        _for_each_inner_interrupt_priority!((11, 12, Priority12));
+        _for_each_inner_interrupt_priority!((12, 13, Priority13));
+        _for_each_inner_interrupt_priority!((13, 14, Priority14));
+        _for_each_inner_interrupt_priority!((14, 15, Priority15));
+        _for_each_inner_interrupt_priority!((all(0, 1, Priority1), (1, 2, Priority2), (2,
+        3, Priority3), (3, 4, Priority4), (4, 5, Priority5), (5, 6, Priority6), (6, 7,
+        Priority7), (7, 8, Priority8), (8, 9, Priority9), (9, 10, Priority10), (10, 11,
+        Priority11), (11, 12, Priority12), (12, 13, Priority13), (13, 14, Priority14),
+        (14, 15, Priority15)));
+    };
+}
+#[macro_export]
+#[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
+macro_rules! for_each_sw_interrupt {
+    ($($pattern:tt => $code:tt;)*) => {
+        macro_rules! _for_each_inner_sw_interrupt { $(($pattern) => $code;)* ($other :
+        tt) => {} } _for_each_inner_sw_interrupt!((0, FROM_CPU_INTR0,
+        software_interrupt0)); _for_each_inner_sw_interrupt!((1, FROM_CPU_INTR1,
+        software_interrupt1)); _for_each_inner_sw_interrupt!((2, FROM_CPU_INTR2,
+        software_interrupt2)); _for_each_inner_sw_interrupt!((3, FROM_CPU_INTR3,
+        software_interrupt3)); _for_each_inner_sw_interrupt!((all(0, FROM_CPU_INTR0,
+        software_interrupt0), (1, FROM_CPU_INTR1, software_interrupt1), (2,
+        FROM_CPU_INTR2, software_interrupt2), (3, FROM_CPU_INTR3, software_interrupt3)));
+    };
+}
+#[macro_export]
+macro_rules! sw_interrupt_delay {
+    () => {
+        unsafe {
+            ::core::arch::asm!("nop");
+            ::core::arch::asm!("nop");
+            ::core::arch::asm!("nop");
+            ::core::arch::asm!("nop");
+            ::core::arch::asm!("nop");
+        }
+    };
+}
+#[macro_export]
+#[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
+macro_rules! for_each_sha_algorithm {
+    ($($pattern:tt => $code:tt;)*) => {
+        macro_rules! _for_each_inner_sha_algorithm { $(($pattern) => $code;)* ($other :
+        tt) => {} } _for_each_inner_sha_algorithm!((Sha1, "SHA-1"(sizes : 64, 20, 8)
+        (insecure_against : "collision", "length extension"), 0));
+        _for_each_inner_sha_algorithm!((Sha224, "SHA-224"(sizes : 64, 28, 8)
+        (insecure_against : "length extension"), 1));
+        _for_each_inner_sha_algorithm!((Sha256, "SHA-256"(sizes : 64, 32, 8)
+        (insecure_against : "length extension"), 2));
+        _for_each_inner_sha_algorithm!((algos(Sha1, "SHA-1"(sizes : 64, 20, 8)
+        (insecure_against : "collision", "length extension"), 0), (Sha224,
+        "SHA-224"(sizes : 64, 28, 8) (insecure_against : "length extension"), 1),
+        (Sha256, "SHA-256"(sizes : 64, 32, 8) (insecure_against : "length extension"),
+        2)));
     };
 }
 #[macro_export]
@@ -424,6 +607,12 @@ macro_rules! for_each_soc_xtal_options {
 ///     todo!()
 /// }
 ///
+/// // UART_MEM_CLK
+///
+/// fn enable_uart_mem_clk_impl(_clocks: &mut ClockTree, _en: bool) {
+///     todo!()
+/// }
+///
 /// // TIMG0_FUNCTION_CLOCK
 ///
 /// fn enable_timg0_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
@@ -448,6 +637,76 @@ macro_rules! for_each_soc_xtal_options {
 ///     _clocks: &mut ClockTree,
 ///     _old_selector: Option<Timg0CalibrationClockConfig>,
 ///     _new_selector: Timg0CalibrationClockConfig,
+/// ) {
+///     todo!()
+/// }
+///
+/// // TIMG0_WDT_CLOCK
+///
+/// fn enable_timg0_wdt_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+///     todo!()
+/// }
+///
+/// fn configure_timg0_wdt_clock_impl(
+///     _clocks: &mut ClockTree,
+///     _old_selector: Option<Timg0WdtClockConfig>,
+///     _new_selector: Timg0WdtClockConfig,
+/// ) {
+///     todo!()
+/// }
+///
+/// // UART0_FUNCTION_CLOCK
+///
+/// fn enable_uart0_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+///     todo!()
+/// }
+///
+/// fn configure_uart0_function_clock_impl(
+///     _clocks: &mut ClockTree,
+///     _old_selector: Option<Uart0FunctionClockConfig>,
+///     _new_selector: Uart0FunctionClockConfig,
+/// ) {
+///     todo!()
+/// }
+///
+/// // UART0_MEM_CLOCK
+///
+/// fn enable_uart0_mem_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+///     todo!()
+/// }
+///
+/// fn configure_uart0_mem_clock_impl(
+///     _clocks: &mut ClockTree,
+///     _old_selector: Option<Uart0MemClockConfig>,
+///     _new_selector: Uart0MemClockConfig,
+/// ) {
+///     todo!()
+/// }
+///
+/// // UART1_FUNCTION_CLOCK
+///
+/// fn enable_uart1_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+///     todo!()
+/// }
+///
+/// fn configure_uart1_function_clock_impl(
+///     _clocks: &mut ClockTree,
+///     _old_selector: Option<Uart0FunctionClockConfig>,
+///     _new_selector: Uart0FunctionClockConfig,
+/// ) {
+///     todo!()
+/// }
+///
+/// // UART1_MEM_CLOCK
+///
+/// fn enable_uart1_mem_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+///     todo!()
+/// }
+///
+/// fn configure_uart1_mem_clock_impl(
+///     _clocks: &mut ClockTree,
+///     _old_selector: Option<Uart0MemClockConfig>,
+///     _new_selector: Uart0MemClockConfig,
 /// ) {
 ///     todo!()
 /// }
@@ -646,6 +905,36 @@ macro_rules! define_clock_tree_types {
             /// Selects `OSC_SLOW_CLK`.
             Osc32kClk,
         }
+        /// The list of clock signals that the `TIMG0_WDT_CLOCK` multiplexer can output.
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+        pub enum Timg0WdtClockConfig {
+            #[default]
+            /// Selects `PLL_40M`.
+            Pll40m,
+            /// Selects `XTAL_CLK`.
+            XtalClk,
+        }
+        /// The list of clock signals that the `UART0_FUNCTION_CLOCK` multiplexer can output.
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+        pub enum Uart0FunctionClockConfig {
+            /// Selects `PLL_40M`.
+            PllF40m,
+            /// Selects `RC_FAST_CLK`.
+            RcFast,
+            #[default]
+            /// Selects `XTAL_CLK`.
+            Xtal,
+        }
+        /// The list of clock signals that the `UART0_MEM_CLOCK` multiplexer can output.
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+        pub enum Uart0MemClockConfig {
+            #[default]
+            /// Selects `UART_MEM_CLK`.
+            Mem,
+        }
         /// Represents the device's clock tree.
         pub struct ClockTree {
             xtal_clk: Option<XtalClkConfig>,
@@ -662,6 +951,11 @@ macro_rules! define_clock_tree_types {
             low_power_clk: Option<LowPowerClkConfig>,
             timg0_function_clock: Option<Timg0FunctionClockConfig>,
             timg0_calibration_clock: Option<Timg0CalibrationClockConfig>,
+            timg0_wdt_clock: Option<Timg0WdtClockConfig>,
+            uart0_function_clock: Option<Uart0FunctionClockConfig>,
+            uart0_mem_clock: Option<Uart0MemClockConfig>,
+            uart1_function_clock: Option<Uart0FunctionClockConfig>,
+            uart1_mem_clock: Option<Uart0MemClockConfig>,
             rc_fast_clk_refcount: u32,
             osc_slow_clk_refcount: u32,
             rc_slow_clk_refcount: u32,
@@ -673,8 +967,14 @@ macro_rules! define_clock_tree_types {
             pll_60m_refcount: u32,
             rtc_fast_clk_refcount: u32,
             low_power_clk_refcount: u32,
+            uart_mem_clk_refcount: u32,
             timg0_function_clock_refcount: u32,
             timg0_calibration_clock_refcount: u32,
+            timg0_wdt_clock_refcount: u32,
+            uart0_function_clock_refcount: u32,
+            uart0_mem_clock_refcount: u32,
+            uart1_function_clock_refcount: u32,
+            uart1_mem_clock_refcount: u32,
         }
         impl ClockTree {
             /// Locks the clock tree for exclusive access.
@@ -737,6 +1037,26 @@ macro_rules! define_clock_tree_types {
             pub fn timg0_calibration_clock(&self) -> Option<Timg0CalibrationClockConfig> {
                 self.timg0_calibration_clock
             }
+            /// Returns the current configuration of the TIMG0_WDT_CLOCK clock tree node
+            pub fn timg0_wdt_clock(&self) -> Option<Timg0WdtClockConfig> {
+                self.timg0_wdt_clock
+            }
+            /// Returns the current configuration of the UART0_FUNCTION_CLOCK clock tree node
+            pub fn uart0_function_clock(&self) -> Option<Uart0FunctionClockConfig> {
+                self.uart0_function_clock
+            }
+            /// Returns the current configuration of the UART0_MEM_CLOCK clock tree node
+            pub fn uart0_mem_clock(&self) -> Option<Uart0MemClockConfig> {
+                self.uart0_mem_clock
+            }
+            /// Returns the current configuration of the UART1_FUNCTION_CLOCK clock tree node
+            pub fn uart1_function_clock(&self) -> Option<Uart0FunctionClockConfig> {
+                self.uart1_function_clock
+            }
+            /// Returns the current configuration of the UART1_MEM_CLOCK clock tree node
+            pub fn uart1_mem_clock(&self) -> Option<Uart0MemClockConfig> {
+                self.uart1_mem_clock
+            }
         }
         static CLOCK_TREE: ::esp_sync::NonReentrantMutex<ClockTree> =
             ::esp_sync::NonReentrantMutex::new(ClockTree {
@@ -754,6 +1074,11 @@ macro_rules! define_clock_tree_types {
                 low_power_clk: None,
                 timg0_function_clock: None,
                 timg0_calibration_clock: None,
+                timg0_wdt_clock: None,
+                uart0_function_clock: None,
+                uart0_mem_clock: None,
+                uart1_function_clock: None,
+                uart1_mem_clock: None,
                 rc_fast_clk_refcount: 0,
                 osc_slow_clk_refcount: 0,
                 rc_slow_clk_refcount: 0,
@@ -765,12 +1090,21 @@ macro_rules! define_clock_tree_types {
                 pll_60m_refcount: 0,
                 rtc_fast_clk_refcount: 0,
                 low_power_clk_refcount: 0,
+                uart_mem_clk_refcount: 0,
                 timg0_function_clock_refcount: 0,
                 timg0_calibration_clock_refcount: 0,
+                timg0_wdt_clock_refcount: 0,
+                uart0_function_clock_refcount: 0,
+                uart0_mem_clock_refcount: 0,
+                uart1_function_clock_refcount: 0,
+                uart1_mem_clock_refcount: 0,
             });
         pub fn configure_xtal_clk(clocks: &mut ClockTree, config: XtalClkConfig) {
             clocks.xtal_clk = Some(config);
             configure_xtal_clk_impl(clocks, config);
+        }
+        pub fn xtal_clk_config(clocks: &mut ClockTree) -> Option<XtalClkConfig> {
+            clocks.xtal_clk
         }
         fn request_xtal_clk(_clocks: &mut ClockTree) {}
         fn release_xtal_clk(_clocks: &mut ClockTree) {}
@@ -778,10 +1112,14 @@ macro_rules! define_clock_tree_types {
             unwrap!(clocks.xtal_clk).value()
         }
         pub fn request_pll_clk(clocks: &mut ClockTree) {
+            trace!("Requesting PLL_CLK");
+            trace!("Enabling PLL_CLK");
             request_xtal_clk(clocks);
             enable_pll_clk_impl(clocks, true);
         }
         pub fn release_pll_clk(clocks: &mut ClockTree) {
+            trace!("Releasing PLL_CLK");
+            trace!("Disabling PLL_CLK");
             enable_pll_clk_impl(clocks, false);
             release_xtal_clk(clocks);
         }
@@ -789,12 +1127,16 @@ macro_rules! define_clock_tree_types {
             480000000
         }
         pub fn request_rc_fast_clk(clocks: &mut ClockTree) {
+            trace!("Requesting RC_FAST_CLK");
             if increment_reference_count(&mut clocks.rc_fast_clk_refcount) {
+                trace!("Enabling RC_FAST_CLK");
                 enable_rc_fast_clk_impl(clocks, true);
             }
         }
         pub fn release_rc_fast_clk(clocks: &mut ClockTree) {
+            trace!("Releasing RC_FAST_CLK");
             if decrement_reference_count(&mut clocks.rc_fast_clk_refcount) {
+                trace!("Disabling RC_FAST_CLK");
                 enable_rc_fast_clk_impl(clocks, false);
             }
         }
@@ -802,12 +1144,16 @@ macro_rules! define_clock_tree_types {
             17500000
         }
         pub fn request_osc_slow_clk(clocks: &mut ClockTree) {
+            trace!("Requesting OSC_SLOW_CLK");
             if increment_reference_count(&mut clocks.osc_slow_clk_refcount) {
+                trace!("Enabling OSC_SLOW_CLK");
                 enable_osc_slow_clk_impl(clocks, true);
             }
         }
         pub fn release_osc_slow_clk(clocks: &mut ClockTree) {
+            trace!("Releasing OSC_SLOW_CLK");
             if decrement_reference_count(&mut clocks.osc_slow_clk_refcount) {
+                trace!("Disabling OSC_SLOW_CLK");
                 enable_osc_slow_clk_impl(clocks, false);
             }
         }
@@ -815,12 +1161,16 @@ macro_rules! define_clock_tree_types {
             32768
         }
         pub fn request_rc_slow_clk(clocks: &mut ClockTree) {
+            trace!("Requesting RC_SLOW_CLK");
             if increment_reference_count(&mut clocks.rc_slow_clk_refcount) {
+                trace!("Enabling RC_SLOW_CLK");
                 enable_rc_slow_clk_impl(clocks, true);
             }
         }
         pub fn release_rc_slow_clk(clocks: &mut ClockTree) {
+            trace!("Releasing RC_SLOW_CLK");
             if decrement_reference_count(&mut clocks.rc_slow_clk_refcount) {
+                trace!("Disabling RC_SLOW_CLK");
                 enable_rc_slow_clk_impl(clocks, false);
             }
         }
@@ -828,13 +1178,17 @@ macro_rules! define_clock_tree_types {
             136000
         }
         pub fn request_rc_fast_div_clk(clocks: &mut ClockTree) {
+            trace!("Requesting RC_FAST_DIV_CLK");
             if increment_reference_count(&mut clocks.rc_fast_div_clk_refcount) {
+                trace!("Enabling RC_FAST_DIV_CLK");
                 request_rc_fast_clk(clocks);
                 enable_rc_fast_div_clk_impl(clocks, true);
             }
         }
         pub fn release_rc_fast_div_clk(clocks: &mut ClockTree) {
+            trace!("Releasing RC_FAST_DIV_CLK");
             if decrement_reference_count(&mut clocks.rc_fast_div_clk_refcount) {
+                trace!("Disabling RC_FAST_DIV_CLK");
                 enable_rc_fast_div_clk_impl(clocks, false);
                 release_rc_fast_clk(clocks);
             }
@@ -847,39 +1201,38 @@ macro_rules! define_clock_tree_types {
             new_selector: SystemPreDivInConfig,
         ) {
             let old_selector = clocks.system_pre_div_in.replace(new_selector);
-            system_pre_div_in_request_upstream(clocks, new_selector);
-            configure_system_pre_div_in_impl(clocks, old_selector, new_selector);
-            if let Some(old_selector) = old_selector {
-                system_pre_div_in_release_upstream(clocks, old_selector);
-            }
-        }
-        fn system_pre_div_in_request_upstream(
-            clocks: &mut ClockTree,
-            selector: SystemPreDivInConfig,
-        ) {
-            match selector {
+            match new_selector {
                 SystemPreDivInConfig::Xtal => request_xtal_clk(clocks),
                 SystemPreDivInConfig::RcFast => request_rc_fast_clk(clocks),
             }
-        }
-        fn system_pre_div_in_release_upstream(
-            clocks: &mut ClockTree,
-            selector: SystemPreDivInConfig,
-        ) {
-            match selector {
-                SystemPreDivInConfig::Xtal => release_xtal_clk(clocks),
-                SystemPreDivInConfig::RcFast => release_rc_fast_clk(clocks),
+            configure_system_pre_div_in_impl(clocks, old_selector, new_selector);
+            if let Some(old_selector) = old_selector {
+                match old_selector {
+                    SystemPreDivInConfig::Xtal => release_xtal_clk(clocks),
+                    SystemPreDivInConfig::RcFast => release_rc_fast_clk(clocks),
+                }
             }
         }
+        pub fn system_pre_div_in_config(clocks: &mut ClockTree) -> Option<SystemPreDivInConfig> {
+            clocks.system_pre_div_in
+        }
         pub fn request_system_pre_div_in(clocks: &mut ClockTree) {
-            let selector = unwrap!(clocks.system_pre_div_in);
-            system_pre_div_in_request_upstream(clocks, selector);
+            trace!("Requesting SYSTEM_PRE_DIV_IN");
+            trace!("Enabling SYSTEM_PRE_DIV_IN");
+            match unwrap!(clocks.system_pre_div_in) {
+                SystemPreDivInConfig::Xtal => request_xtal_clk(clocks),
+                SystemPreDivInConfig::RcFast => request_rc_fast_clk(clocks),
+            }
             enable_system_pre_div_in_impl(clocks, true);
         }
         pub fn release_system_pre_div_in(clocks: &mut ClockTree) {
+            trace!("Releasing SYSTEM_PRE_DIV_IN");
+            trace!("Disabling SYSTEM_PRE_DIV_IN");
             enable_system_pre_div_in_impl(clocks, false);
-            let selector = unwrap!(clocks.system_pre_div_in);
-            system_pre_div_in_release_upstream(clocks, selector);
+            match unwrap!(clocks.system_pre_div_in) {
+                SystemPreDivInConfig::Xtal => release_xtal_clk(clocks),
+                SystemPreDivInConfig::RcFast => release_rc_fast_clk(clocks),
+            }
         }
         pub fn system_pre_div_in_frequency(clocks: &mut ClockTree) -> u32 {
             match unwrap!(clocks.system_pre_div_in) {
@@ -891,11 +1244,18 @@ macro_rules! define_clock_tree_types {
             clocks.system_pre_div = Some(config);
             configure_system_pre_div_impl(clocks, config);
         }
+        pub fn system_pre_div_config(clocks: &mut ClockTree) -> Option<SystemPreDivConfig> {
+            clocks.system_pre_div
+        }
         pub fn request_system_pre_div(clocks: &mut ClockTree) {
+            trace!("Requesting SYSTEM_PRE_DIV");
+            trace!("Enabling SYSTEM_PRE_DIV");
             request_system_pre_div_in(clocks);
             enable_system_pre_div_impl(clocks, true);
         }
         pub fn release_system_pre_div(clocks: &mut ClockTree) {
+            trace!("Releasing SYSTEM_PRE_DIV");
+            trace!("Disabling SYSTEM_PRE_DIV");
             enable_system_pre_div_impl(clocks, false);
             release_system_pre_div_in(clocks);
         }
@@ -906,11 +1266,18 @@ macro_rules! define_clock_tree_types {
             clocks.cpu_pll_div = Some(config);
             configure_cpu_pll_div_impl(clocks, config);
         }
+        pub fn cpu_pll_div_config(clocks: &mut ClockTree) -> Option<CpuPllDivConfig> {
+            clocks.cpu_pll_div
+        }
         pub fn request_cpu_pll_div(clocks: &mut ClockTree) {
+            trace!("Requesting CPU_PLL_DIV");
+            trace!("Enabling CPU_PLL_DIV");
             request_pll_clk(clocks);
             enable_cpu_pll_div_impl(clocks, true);
         }
         pub fn release_cpu_pll_div(clocks: &mut ClockTree) {
+            trace!("Releasing CPU_PLL_DIV");
+            trace!("Disabling CPU_PLL_DIV");
             enable_cpu_pll_div_impl(clocks, false);
             release_pll_clk(clocks);
         }
@@ -920,39 +1287,44 @@ macro_rules! define_clock_tree_types {
         pub fn configure_apb_clk(clocks: &mut ClockTree, new_selector: ApbClkConfig) {
             let old_selector = clocks.apb_clk.replace(new_selector);
             if clocks.apb_clk_refcount > 0 {
-                apb_clk_request_upstream(clocks, new_selector);
+                match new_selector {
+                    ApbClkConfig::Pll40m => request_pll_40m(clocks),
+                    ApbClkConfig::Cpu => request_cpu_clk(clocks),
+                }
                 configure_apb_clk_impl(clocks, old_selector, new_selector);
                 if let Some(old_selector) = old_selector {
-                    apb_clk_release_upstream(clocks, old_selector);
+                    match old_selector {
+                        ApbClkConfig::Pll40m => release_pll_40m(clocks),
+                        ApbClkConfig::Cpu => release_cpu_clk(clocks),
+                    }
                 }
             } else {
                 configure_apb_clk_impl(clocks, old_selector, new_selector);
             }
         }
-        fn apb_clk_request_upstream(clocks: &mut ClockTree, selector: ApbClkConfig) {
-            match selector {
-                ApbClkConfig::Pll40m => request_pll_40m(clocks),
-                ApbClkConfig::Cpu => request_cpu_clk(clocks),
-            }
-        }
-        fn apb_clk_release_upstream(clocks: &mut ClockTree, selector: ApbClkConfig) {
-            match selector {
-                ApbClkConfig::Pll40m => release_pll_40m(clocks),
-                ApbClkConfig::Cpu => release_cpu_clk(clocks),
-            }
+        pub fn apb_clk_config(clocks: &mut ClockTree) -> Option<ApbClkConfig> {
+            clocks.apb_clk
         }
         pub fn request_apb_clk(clocks: &mut ClockTree) {
+            trace!("Requesting APB_CLK");
             if increment_reference_count(&mut clocks.apb_clk_refcount) {
-                let selector = unwrap!(clocks.apb_clk);
-                apb_clk_request_upstream(clocks, selector);
+                trace!("Enabling APB_CLK");
+                match unwrap!(clocks.apb_clk) {
+                    ApbClkConfig::Pll40m => request_pll_40m(clocks),
+                    ApbClkConfig::Cpu => request_cpu_clk(clocks),
+                }
                 enable_apb_clk_impl(clocks, true);
             }
         }
         pub fn release_apb_clk(clocks: &mut ClockTree) {
+            trace!("Releasing APB_CLK");
             if decrement_reference_count(&mut clocks.apb_clk_refcount) {
+                trace!("Disabling APB_CLK");
                 enable_apb_clk_impl(clocks, false);
-                let selector = unwrap!(clocks.apb_clk);
-                apb_clk_release_upstream(clocks, selector);
+                match unwrap!(clocks.apb_clk) {
+                    ApbClkConfig::Pll40m => release_pll_40m(clocks),
+                    ApbClkConfig::Cpu => release_cpu_clk(clocks),
+                }
             }
         }
         pub fn apb_clk_frequency(clocks: &mut ClockTree) -> u32 {
@@ -964,39 +1336,44 @@ macro_rules! define_clock_tree_types {
         pub fn configure_crypto_clk(clocks: &mut ClockTree, new_selector: CryptoClkConfig) {
             let old_selector = clocks.crypto_clk.replace(new_selector);
             if clocks.crypto_clk_refcount > 0 {
-                crypto_clk_request_upstream(clocks, new_selector);
+                match new_selector {
+                    CryptoClkConfig::Pll80m => request_pll_80m(clocks),
+                    CryptoClkConfig::Cpu => request_cpu_clk(clocks),
+                }
                 configure_crypto_clk_impl(clocks, old_selector, new_selector);
                 if let Some(old_selector) = old_selector {
-                    crypto_clk_release_upstream(clocks, old_selector);
+                    match old_selector {
+                        CryptoClkConfig::Pll80m => release_pll_80m(clocks),
+                        CryptoClkConfig::Cpu => release_cpu_clk(clocks),
+                    }
                 }
             } else {
                 configure_crypto_clk_impl(clocks, old_selector, new_selector);
             }
         }
-        fn crypto_clk_request_upstream(clocks: &mut ClockTree, selector: CryptoClkConfig) {
-            match selector {
-                CryptoClkConfig::Pll80m => request_pll_80m(clocks),
-                CryptoClkConfig::Cpu => request_cpu_clk(clocks),
-            }
-        }
-        fn crypto_clk_release_upstream(clocks: &mut ClockTree, selector: CryptoClkConfig) {
-            match selector {
-                CryptoClkConfig::Pll80m => release_pll_80m(clocks),
-                CryptoClkConfig::Cpu => release_cpu_clk(clocks),
-            }
+        pub fn crypto_clk_config(clocks: &mut ClockTree) -> Option<CryptoClkConfig> {
+            clocks.crypto_clk
         }
         pub fn request_crypto_clk(clocks: &mut ClockTree) {
+            trace!("Requesting CRYPTO_CLK");
             if increment_reference_count(&mut clocks.crypto_clk_refcount) {
-                let selector = unwrap!(clocks.crypto_clk);
-                crypto_clk_request_upstream(clocks, selector);
+                trace!("Enabling CRYPTO_CLK");
+                match unwrap!(clocks.crypto_clk) {
+                    CryptoClkConfig::Pll80m => request_pll_80m(clocks),
+                    CryptoClkConfig::Cpu => request_cpu_clk(clocks),
+                }
                 enable_crypto_clk_impl(clocks, true);
             }
         }
         pub fn release_crypto_clk(clocks: &mut ClockTree) {
+            trace!("Releasing CRYPTO_CLK");
             if decrement_reference_count(&mut clocks.crypto_clk_refcount) {
+                trace!("Disabling CRYPTO_CLK");
                 enable_crypto_clk_impl(clocks, false);
-                let selector = unwrap!(clocks.crypto_clk);
-                crypto_clk_release_upstream(clocks, selector);
+                match unwrap!(clocks.crypto_clk) {
+                    CryptoClkConfig::Pll80m => release_pll_80m(clocks),
+                    CryptoClkConfig::Cpu => release_cpu_clk(clocks),
+                }
             }
         }
         pub fn crypto_clk_frequency(clocks: &mut ClockTree) -> u32 {
@@ -1008,39 +1385,44 @@ macro_rules! define_clock_tree_types {
         pub fn configure_mspi_clk(clocks: &mut ClockTree, new_selector: MspiClkConfig) {
             let old_selector = clocks.mspi_clk.replace(new_selector);
             if clocks.mspi_clk_refcount > 0 {
-                mspi_clk_request_upstream(clocks, new_selector);
+                match new_selector {
+                    MspiClkConfig::CpuDiv2 => request_cpu_div2(clocks),
+                    MspiClkConfig::Cpu => request_cpu_clk(clocks),
+                }
                 configure_mspi_clk_impl(clocks, old_selector, new_selector);
                 if let Some(old_selector) = old_selector {
-                    mspi_clk_release_upstream(clocks, old_selector);
+                    match old_selector {
+                        MspiClkConfig::CpuDiv2 => release_cpu_div2(clocks),
+                        MspiClkConfig::Cpu => release_cpu_clk(clocks),
+                    }
                 }
             } else {
                 configure_mspi_clk_impl(clocks, old_selector, new_selector);
             }
         }
-        fn mspi_clk_request_upstream(clocks: &mut ClockTree, selector: MspiClkConfig) {
-            match selector {
-                MspiClkConfig::CpuDiv2 => request_cpu_div2(clocks),
-                MspiClkConfig::Cpu => request_cpu_clk(clocks),
-            }
-        }
-        fn mspi_clk_release_upstream(clocks: &mut ClockTree, selector: MspiClkConfig) {
-            match selector {
-                MspiClkConfig::CpuDiv2 => release_cpu_div2(clocks),
-                MspiClkConfig::Cpu => release_cpu_clk(clocks),
-            }
+        pub fn mspi_clk_config(clocks: &mut ClockTree) -> Option<MspiClkConfig> {
+            clocks.mspi_clk
         }
         pub fn request_mspi_clk(clocks: &mut ClockTree) {
+            trace!("Requesting MSPI_CLK");
             if increment_reference_count(&mut clocks.mspi_clk_refcount) {
-                let selector = unwrap!(clocks.mspi_clk);
-                mspi_clk_request_upstream(clocks, selector);
+                trace!("Enabling MSPI_CLK");
+                match unwrap!(clocks.mspi_clk) {
+                    MspiClkConfig::CpuDiv2 => request_cpu_div2(clocks),
+                    MspiClkConfig::Cpu => request_cpu_clk(clocks),
+                }
                 enable_mspi_clk_impl(clocks, true);
             }
         }
         pub fn release_mspi_clk(clocks: &mut ClockTree) {
+            trace!("Releasing MSPI_CLK");
             if decrement_reference_count(&mut clocks.mspi_clk_refcount) {
+                trace!("Disabling MSPI_CLK");
                 enable_mspi_clk_impl(clocks, false);
-                let selector = unwrap!(clocks.mspi_clk);
-                mspi_clk_release_upstream(clocks, selector);
+                match unwrap!(clocks.mspi_clk) {
+                    MspiClkConfig::CpuDiv2 => release_cpu_div2(clocks),
+                    MspiClkConfig::Cpu => release_cpu_clk(clocks),
+                }
             }
         }
         pub fn mspi_clk_frequency(clocks: &mut ClockTree) -> u32 {
@@ -1070,25 +1452,22 @@ macro_rules! define_clock_tree_types {
                     configure_mspi_clk(clocks, MspiClkConfig::CpuDiv2);
                 }
             }
-            cpu_clk_request_upstream(clocks, new_selector);
-            configure_cpu_clk_impl(clocks, old_selector, new_selector);
-            if let Some(old_selector) = old_selector {
-                cpu_clk_release_upstream(clocks, old_selector);
-            }
-        }
-        fn cpu_clk_request_upstream(clocks: &mut ClockTree, selector: CpuClkConfig) {
-            match selector {
+            match new_selector {
                 CpuClkConfig::Xtal => request_system_pre_div(clocks),
                 CpuClkConfig::RcFast => request_system_pre_div(clocks),
                 CpuClkConfig::Pll => request_cpu_pll_div(clocks),
             }
-        }
-        fn cpu_clk_release_upstream(clocks: &mut ClockTree, selector: CpuClkConfig) {
-            match selector {
-                CpuClkConfig::Xtal => release_system_pre_div(clocks),
-                CpuClkConfig::RcFast => release_system_pre_div(clocks),
-                CpuClkConfig::Pll => release_cpu_pll_div(clocks),
+            configure_cpu_clk_impl(clocks, old_selector, new_selector);
+            if let Some(old_selector) = old_selector {
+                match old_selector {
+                    CpuClkConfig::Xtal => release_system_pre_div(clocks),
+                    CpuClkConfig::RcFast => release_system_pre_div(clocks),
+                    CpuClkConfig::Pll => release_cpu_pll_div(clocks),
+                }
             }
+        }
+        pub fn cpu_clk_config(clocks: &mut ClockTree) -> Option<CpuClkConfig> {
+            clocks.cpu_clk
         }
         fn request_cpu_clk(_clocks: &mut ClockTree) {}
         fn release_cpu_clk(_clocks: &mut ClockTree) {}
@@ -1100,13 +1479,17 @@ macro_rules! define_clock_tree_types {
             }
         }
         pub fn request_pll_40m(clocks: &mut ClockTree) {
+            trace!("Requesting PLL_40M");
             if increment_reference_count(&mut clocks.pll_40m_refcount) {
+                trace!("Enabling PLL_40M");
                 request_cpu_clk(clocks);
                 enable_pll_40m_impl(clocks, true);
             }
         }
         pub fn release_pll_40m(clocks: &mut ClockTree) {
+            trace!("Releasing PLL_40M");
             if decrement_reference_count(&mut clocks.pll_40m_refcount) {
+                trace!("Disabling PLL_40M");
                 enable_pll_40m_impl(clocks, false);
                 release_cpu_clk(clocks);
             }
@@ -1115,13 +1498,17 @@ macro_rules! define_clock_tree_types {
             40000000
         }
         pub fn request_pll_60m(clocks: &mut ClockTree) {
+            trace!("Requesting PLL_60M");
             if increment_reference_count(&mut clocks.pll_60m_refcount) {
+                trace!("Enabling PLL_60M");
                 request_cpu_clk(clocks);
                 enable_pll_60m_impl(clocks, true);
             }
         }
         pub fn release_pll_60m(clocks: &mut ClockTree) {
+            trace!("Releasing PLL_60M");
             if decrement_reference_count(&mut clocks.pll_60m_refcount) {
+                trace!("Disabling PLL_60M");
                 enable_pll_60m_impl(clocks, false);
                 release_cpu_clk(clocks);
             }
@@ -1130,10 +1517,14 @@ macro_rules! define_clock_tree_types {
             60000000
         }
         pub fn request_pll_80m(clocks: &mut ClockTree) {
+            trace!("Requesting PLL_80M");
+            trace!("Enabling PLL_80M");
             request_cpu_clk(clocks);
             enable_pll_80m_impl(clocks, true);
         }
         pub fn release_pll_80m(clocks: &mut ClockTree) {
+            trace!("Releasing PLL_80M");
+            trace!("Disabling PLL_80M");
             enable_pll_80m_impl(clocks, false);
             release_cpu_clk(clocks);
         }
@@ -1141,10 +1532,14 @@ macro_rules! define_clock_tree_types {
             80000000
         }
         pub fn request_cpu_div2(clocks: &mut ClockTree) {
+            trace!("Requesting CPU_DIV2");
+            trace!("Enabling CPU_DIV2");
             request_cpu_clk(clocks);
             enable_cpu_div2_impl(clocks, true);
         }
         pub fn release_cpu_div2(clocks: &mut ClockTree) {
+            trace!("Releasing CPU_DIV2");
+            trace!("Disabling CPU_DIV2");
             enable_cpu_div2_impl(clocks, false);
             release_cpu_clk(clocks);
         }
@@ -1155,11 +1550,18 @@ macro_rules! define_clock_tree_types {
             clocks.rc_fast_clk_div_n = Some(config);
             configure_rc_fast_clk_div_n_impl(clocks, config);
         }
+        pub fn rc_fast_clk_div_n_config(clocks: &mut ClockTree) -> Option<RcFastClkDivNConfig> {
+            clocks.rc_fast_clk_div_n
+        }
         pub fn request_rc_fast_clk_div_n(clocks: &mut ClockTree) {
+            trace!("Requesting RC_FAST_CLK_DIV_N");
+            trace!("Enabling RC_FAST_CLK_DIV_N");
             request_rc_fast_clk(clocks);
             enable_rc_fast_clk_div_n_impl(clocks, true);
         }
         pub fn release_rc_fast_clk_div_n(clocks: &mut ClockTree) {
+            trace!("Releasing RC_FAST_CLK_DIV_N");
+            trace!("Disabling RC_FAST_CLK_DIV_N");
             enable_rc_fast_clk_div_n_impl(clocks, false);
             release_rc_fast_clk(clocks);
         }
@@ -1167,10 +1569,14 @@ macro_rules! define_clock_tree_types {
             (rc_fast_clk_frequency(clocks) / (unwrap!(clocks.rc_fast_clk_div_n).value() + 1))
         }
         pub fn request_xtal_div_clk(clocks: &mut ClockTree) {
+            trace!("Requesting XTAL_DIV_CLK");
+            trace!("Enabling XTAL_DIV_CLK");
             request_xtal_clk(clocks);
             enable_xtal_div_clk_impl(clocks, true);
         }
         pub fn release_xtal_div_clk(clocks: &mut ClockTree) {
+            trace!("Releasing XTAL_DIV_CLK");
+            trace!("Disabling XTAL_DIV_CLK");
             enable_xtal_div_clk_impl(clocks, false);
             release_xtal_clk(clocks);
         }
@@ -1179,35 +1585,42 @@ macro_rules! define_clock_tree_types {
         }
         pub fn configure_rtc_slow_clk(clocks: &mut ClockTree, new_selector: RtcSlowClkConfig) {
             let old_selector = clocks.rtc_slow_clk.replace(new_selector);
-            rtc_slow_clk_request_upstream(clocks, new_selector);
-            configure_rtc_slow_clk_impl(clocks, old_selector, new_selector);
-            if let Some(old_selector) = old_selector {
-                rtc_slow_clk_release_upstream(clocks, old_selector);
-            }
-        }
-        fn rtc_slow_clk_request_upstream(clocks: &mut ClockTree, selector: RtcSlowClkConfig) {
-            match selector {
+            match new_selector {
                 RtcSlowClkConfig::OscSlow => request_osc_slow_clk(clocks),
                 RtcSlowClkConfig::RcSlow => request_rc_slow_clk(clocks),
                 RtcSlowClkConfig::RcFast => request_rc_fast_div_clk(clocks),
             }
+            configure_rtc_slow_clk_impl(clocks, old_selector, new_selector);
+            if let Some(old_selector) = old_selector {
+                match old_selector {
+                    RtcSlowClkConfig::OscSlow => release_osc_slow_clk(clocks),
+                    RtcSlowClkConfig::RcSlow => release_rc_slow_clk(clocks),
+                    RtcSlowClkConfig::RcFast => release_rc_fast_div_clk(clocks),
+                }
+            }
         }
-        fn rtc_slow_clk_release_upstream(clocks: &mut ClockTree, selector: RtcSlowClkConfig) {
-            match selector {
+        pub fn rtc_slow_clk_config(clocks: &mut ClockTree) -> Option<RtcSlowClkConfig> {
+            clocks.rtc_slow_clk
+        }
+        pub fn request_rtc_slow_clk(clocks: &mut ClockTree) {
+            trace!("Requesting RTC_SLOW_CLK");
+            trace!("Enabling RTC_SLOW_CLK");
+            match unwrap!(clocks.rtc_slow_clk) {
+                RtcSlowClkConfig::OscSlow => request_osc_slow_clk(clocks),
+                RtcSlowClkConfig::RcSlow => request_rc_slow_clk(clocks),
+                RtcSlowClkConfig::RcFast => request_rc_fast_div_clk(clocks),
+            }
+            enable_rtc_slow_clk_impl(clocks, true);
+        }
+        pub fn release_rtc_slow_clk(clocks: &mut ClockTree) {
+            trace!("Releasing RTC_SLOW_CLK");
+            trace!("Disabling RTC_SLOW_CLK");
+            enable_rtc_slow_clk_impl(clocks, false);
+            match unwrap!(clocks.rtc_slow_clk) {
                 RtcSlowClkConfig::OscSlow => release_osc_slow_clk(clocks),
                 RtcSlowClkConfig::RcSlow => release_rc_slow_clk(clocks),
                 RtcSlowClkConfig::RcFast => release_rc_fast_div_clk(clocks),
             }
-        }
-        pub fn request_rtc_slow_clk(clocks: &mut ClockTree) {
-            let selector = unwrap!(clocks.rtc_slow_clk);
-            rtc_slow_clk_request_upstream(clocks, selector);
-            enable_rtc_slow_clk_impl(clocks, true);
-        }
-        pub fn release_rtc_slow_clk(clocks: &mut ClockTree) {
-            enable_rtc_slow_clk_impl(clocks, false);
-            let selector = unwrap!(clocks.rtc_slow_clk);
-            rtc_slow_clk_release_upstream(clocks, selector);
         }
         pub fn rtc_slow_clk_frequency(clocks: &mut ClockTree) -> u32 {
             match unwrap!(clocks.rtc_slow_clk) {
@@ -1219,39 +1632,44 @@ macro_rules! define_clock_tree_types {
         pub fn configure_rtc_fast_clk(clocks: &mut ClockTree, new_selector: RtcFastClkConfig) {
             let old_selector = clocks.rtc_fast_clk.replace(new_selector);
             if clocks.rtc_fast_clk_refcount > 0 {
-                rtc_fast_clk_request_upstream(clocks, new_selector);
+                match new_selector {
+                    RtcFastClkConfig::Xtal => request_xtal_div_clk(clocks),
+                    RtcFastClkConfig::Rc => request_rc_fast_clk_div_n(clocks),
+                }
                 configure_rtc_fast_clk_impl(clocks, old_selector, new_selector);
                 if let Some(old_selector) = old_selector {
-                    rtc_fast_clk_release_upstream(clocks, old_selector);
+                    match old_selector {
+                        RtcFastClkConfig::Xtal => release_xtal_div_clk(clocks),
+                        RtcFastClkConfig::Rc => release_rc_fast_clk_div_n(clocks),
+                    }
                 }
             } else {
                 configure_rtc_fast_clk_impl(clocks, old_selector, new_selector);
             }
         }
-        fn rtc_fast_clk_request_upstream(clocks: &mut ClockTree, selector: RtcFastClkConfig) {
-            match selector {
-                RtcFastClkConfig::Xtal => request_xtal_div_clk(clocks),
-                RtcFastClkConfig::Rc => request_rc_fast_clk_div_n(clocks),
-            }
-        }
-        fn rtc_fast_clk_release_upstream(clocks: &mut ClockTree, selector: RtcFastClkConfig) {
-            match selector {
-                RtcFastClkConfig::Xtal => release_xtal_div_clk(clocks),
-                RtcFastClkConfig::Rc => release_rc_fast_clk_div_n(clocks),
-            }
+        pub fn rtc_fast_clk_config(clocks: &mut ClockTree) -> Option<RtcFastClkConfig> {
+            clocks.rtc_fast_clk
         }
         pub fn request_rtc_fast_clk(clocks: &mut ClockTree) {
+            trace!("Requesting RTC_FAST_CLK");
             if increment_reference_count(&mut clocks.rtc_fast_clk_refcount) {
-                let selector = unwrap!(clocks.rtc_fast_clk);
-                rtc_fast_clk_request_upstream(clocks, selector);
+                trace!("Enabling RTC_FAST_CLK");
+                match unwrap!(clocks.rtc_fast_clk) {
+                    RtcFastClkConfig::Xtal => request_xtal_div_clk(clocks),
+                    RtcFastClkConfig::Rc => request_rc_fast_clk_div_n(clocks),
+                }
                 enable_rtc_fast_clk_impl(clocks, true);
             }
         }
         pub fn release_rtc_fast_clk(clocks: &mut ClockTree) {
+            trace!("Releasing RTC_FAST_CLK");
             if decrement_reference_count(&mut clocks.rtc_fast_clk_refcount) {
+                trace!("Disabling RTC_FAST_CLK");
                 enable_rtc_fast_clk_impl(clocks, false);
-                let selector = unwrap!(clocks.rtc_fast_clk);
-                rtc_fast_clk_release_upstream(clocks, selector);
+                match unwrap!(clocks.rtc_fast_clk) {
+                    RtcFastClkConfig::Xtal => release_xtal_div_clk(clocks),
+                    RtcFastClkConfig::Rc => release_rc_fast_clk_div_n(clocks),
+                }
             }
         }
         pub fn rtc_fast_clk_frequency(clocks: &mut ClockTree) -> u32 {
@@ -1263,43 +1681,52 @@ macro_rules! define_clock_tree_types {
         pub fn configure_low_power_clk(clocks: &mut ClockTree, new_selector: LowPowerClkConfig) {
             let old_selector = clocks.low_power_clk.replace(new_selector);
             if clocks.low_power_clk_refcount > 0 {
-                low_power_clk_request_upstream(clocks, new_selector);
+                match new_selector {
+                    LowPowerClkConfig::Xtal => request_xtal_clk(clocks),
+                    LowPowerClkConfig::RcFast => request_rc_fast_clk(clocks),
+                    LowPowerClkConfig::OscSlow => request_osc_slow_clk(clocks),
+                    LowPowerClkConfig::RtcSlow => request_rtc_slow_clk(clocks),
+                }
                 configure_low_power_clk_impl(clocks, old_selector, new_selector);
                 if let Some(old_selector) = old_selector {
-                    low_power_clk_release_upstream(clocks, old_selector);
+                    match old_selector {
+                        LowPowerClkConfig::Xtal => release_xtal_clk(clocks),
+                        LowPowerClkConfig::RcFast => release_rc_fast_clk(clocks),
+                        LowPowerClkConfig::OscSlow => release_osc_slow_clk(clocks),
+                        LowPowerClkConfig::RtcSlow => release_rtc_slow_clk(clocks),
+                    }
                 }
             } else {
                 configure_low_power_clk_impl(clocks, old_selector, new_selector);
             }
         }
-        fn low_power_clk_request_upstream(clocks: &mut ClockTree, selector: LowPowerClkConfig) {
-            match selector {
-                LowPowerClkConfig::Xtal => request_xtal_clk(clocks),
-                LowPowerClkConfig::RcFast => request_rc_fast_clk(clocks),
-                LowPowerClkConfig::OscSlow => request_osc_slow_clk(clocks),
-                LowPowerClkConfig::RtcSlow => request_rtc_slow_clk(clocks),
-            }
-        }
-        fn low_power_clk_release_upstream(clocks: &mut ClockTree, selector: LowPowerClkConfig) {
-            match selector {
-                LowPowerClkConfig::Xtal => release_xtal_clk(clocks),
-                LowPowerClkConfig::RcFast => release_rc_fast_clk(clocks),
-                LowPowerClkConfig::OscSlow => release_osc_slow_clk(clocks),
-                LowPowerClkConfig::RtcSlow => release_rtc_slow_clk(clocks),
-            }
+        pub fn low_power_clk_config(clocks: &mut ClockTree) -> Option<LowPowerClkConfig> {
+            clocks.low_power_clk
         }
         pub fn request_low_power_clk(clocks: &mut ClockTree) {
+            trace!("Requesting LOW_POWER_CLK");
             if increment_reference_count(&mut clocks.low_power_clk_refcount) {
-                let selector = unwrap!(clocks.low_power_clk);
-                low_power_clk_request_upstream(clocks, selector);
+                trace!("Enabling LOW_POWER_CLK");
+                match unwrap!(clocks.low_power_clk) {
+                    LowPowerClkConfig::Xtal => request_xtal_clk(clocks),
+                    LowPowerClkConfig::RcFast => request_rc_fast_clk(clocks),
+                    LowPowerClkConfig::OscSlow => request_osc_slow_clk(clocks),
+                    LowPowerClkConfig::RtcSlow => request_rtc_slow_clk(clocks),
+                }
                 enable_low_power_clk_impl(clocks, true);
             }
         }
         pub fn release_low_power_clk(clocks: &mut ClockTree) {
+            trace!("Releasing LOW_POWER_CLK");
             if decrement_reference_count(&mut clocks.low_power_clk_refcount) {
+                trace!("Disabling LOW_POWER_CLK");
                 enable_low_power_clk_impl(clocks, false);
-                let selector = unwrap!(clocks.low_power_clk);
-                low_power_clk_release_upstream(clocks, selector);
+                match unwrap!(clocks.low_power_clk) {
+                    LowPowerClkConfig::Xtal => release_xtal_clk(clocks),
+                    LowPowerClkConfig::RcFast => release_rc_fast_clk(clocks),
+                    LowPowerClkConfig::OscSlow => release_osc_slow_clk(clocks),
+                    LowPowerClkConfig::RtcSlow => release_rtc_slow_clk(clocks),
+                }
             }
         }
         pub fn low_power_clk_frequency(clocks: &mut ClockTree) -> u32 {
@@ -1310,51 +1737,71 @@ macro_rules! define_clock_tree_types {
                 LowPowerClkConfig::RtcSlow => rtc_slow_clk_frequency(clocks),
             }
         }
+        pub fn request_uart_mem_clk(clocks: &mut ClockTree) {
+            trace!("Requesting UART_MEM_CLK");
+            if increment_reference_count(&mut clocks.uart_mem_clk_refcount) {
+                trace!("Enabling UART_MEM_CLK");
+                request_xtal_clk(clocks);
+                enable_uart_mem_clk_impl(clocks, true);
+            }
+        }
+        pub fn release_uart_mem_clk(clocks: &mut ClockTree) {
+            trace!("Releasing UART_MEM_CLK");
+            if decrement_reference_count(&mut clocks.uart_mem_clk_refcount) {
+                trace!("Disabling UART_MEM_CLK");
+                enable_uart_mem_clk_impl(clocks, false);
+                release_xtal_clk(clocks);
+            }
+        }
+        pub fn uart_mem_clk_frequency(clocks: &mut ClockTree) -> u32 {
+            xtal_clk_frequency(clocks)
+        }
         pub fn configure_timg0_function_clock(
             clocks: &mut ClockTree,
             new_selector: Timg0FunctionClockConfig,
         ) {
             let old_selector = clocks.timg0_function_clock.replace(new_selector);
             if clocks.timg0_function_clock_refcount > 0 {
-                timg0_function_clock_request_upstream(clocks, new_selector);
+                match new_selector {
+                    Timg0FunctionClockConfig::XtalClk => request_xtal_clk(clocks),
+                    Timg0FunctionClockConfig::Pll40m => request_pll_40m(clocks),
+                }
                 configure_timg0_function_clock_impl(clocks, old_selector, new_selector);
                 if let Some(old_selector) = old_selector {
-                    timg0_function_clock_release_upstream(clocks, old_selector);
+                    match old_selector {
+                        Timg0FunctionClockConfig::XtalClk => release_xtal_clk(clocks),
+                        Timg0FunctionClockConfig::Pll40m => release_pll_40m(clocks),
+                    }
                 }
             } else {
                 configure_timg0_function_clock_impl(clocks, old_selector, new_selector);
             }
         }
-        fn timg0_function_clock_request_upstream(
+        pub fn timg0_function_clock_config(
             clocks: &mut ClockTree,
-            selector: Timg0FunctionClockConfig,
-        ) {
-            match selector {
-                Timg0FunctionClockConfig::XtalClk => request_xtal_clk(clocks),
-                Timg0FunctionClockConfig::Pll40m => request_pll_40m(clocks),
-            }
-        }
-        fn timg0_function_clock_release_upstream(
-            clocks: &mut ClockTree,
-            selector: Timg0FunctionClockConfig,
-        ) {
-            match selector {
-                Timg0FunctionClockConfig::XtalClk => release_xtal_clk(clocks),
-                Timg0FunctionClockConfig::Pll40m => release_pll_40m(clocks),
-            }
+        ) -> Option<Timg0FunctionClockConfig> {
+            clocks.timg0_function_clock
         }
         pub fn request_timg0_function_clock(clocks: &mut ClockTree) {
+            trace!("Requesting TIMG0_FUNCTION_CLOCK");
             if increment_reference_count(&mut clocks.timg0_function_clock_refcount) {
-                let selector = unwrap!(clocks.timg0_function_clock);
-                timg0_function_clock_request_upstream(clocks, selector);
+                trace!("Enabling TIMG0_FUNCTION_CLOCK");
+                match unwrap!(clocks.timg0_function_clock) {
+                    Timg0FunctionClockConfig::XtalClk => request_xtal_clk(clocks),
+                    Timg0FunctionClockConfig::Pll40m => request_pll_40m(clocks),
+                }
                 enable_timg0_function_clock_impl(clocks, true);
             }
         }
         pub fn release_timg0_function_clock(clocks: &mut ClockTree) {
+            trace!("Releasing TIMG0_FUNCTION_CLOCK");
             if decrement_reference_count(&mut clocks.timg0_function_clock_refcount) {
+                trace!("Disabling TIMG0_FUNCTION_CLOCK");
                 enable_timg0_function_clock_impl(clocks, false);
-                let selector = unwrap!(clocks.timg0_function_clock);
-                timg0_function_clock_release_upstream(clocks, selector);
+                match unwrap!(clocks.timg0_function_clock) {
+                    Timg0FunctionClockConfig::XtalClk => release_xtal_clk(clocks),
+                    Timg0FunctionClockConfig::Pll40m => release_pll_40m(clocks),
+                }
             }
         }
         pub fn timg0_function_clock_frequency(clocks: &mut ClockTree) -> u32 {
@@ -1369,47 +1816,52 @@ macro_rules! define_clock_tree_types {
         ) {
             let old_selector = clocks.timg0_calibration_clock.replace(new_selector);
             if clocks.timg0_calibration_clock_refcount > 0 {
-                timg0_calibration_clock_request_upstream(clocks, new_selector);
+                match new_selector {
+                    Timg0CalibrationClockConfig::RcSlowClk => request_rc_slow_clk(clocks),
+                    Timg0CalibrationClockConfig::RcFastDivClk => request_rc_fast_div_clk(clocks),
+                    Timg0CalibrationClockConfig::Osc32kClk => request_osc_slow_clk(clocks),
+                }
                 configure_timg0_calibration_clock_impl(clocks, old_selector, new_selector);
                 if let Some(old_selector) = old_selector {
-                    timg0_calibration_clock_release_upstream(clocks, old_selector);
+                    match old_selector {
+                        Timg0CalibrationClockConfig::RcSlowClk => release_rc_slow_clk(clocks),
+                        Timg0CalibrationClockConfig::RcFastDivClk => {
+                            release_rc_fast_div_clk(clocks)
+                        }
+                        Timg0CalibrationClockConfig::Osc32kClk => release_osc_slow_clk(clocks),
+                    }
                 }
             } else {
                 configure_timg0_calibration_clock_impl(clocks, old_selector, new_selector);
             }
         }
-        fn timg0_calibration_clock_request_upstream(
+        pub fn timg0_calibration_clock_config(
             clocks: &mut ClockTree,
-            selector: Timg0CalibrationClockConfig,
-        ) {
-            match selector {
-                Timg0CalibrationClockConfig::RcSlowClk => request_rc_slow_clk(clocks),
-                Timg0CalibrationClockConfig::RcFastDivClk => request_rc_fast_div_clk(clocks),
-                Timg0CalibrationClockConfig::Osc32kClk => request_osc_slow_clk(clocks),
-            }
-        }
-        fn timg0_calibration_clock_release_upstream(
-            clocks: &mut ClockTree,
-            selector: Timg0CalibrationClockConfig,
-        ) {
-            match selector {
-                Timg0CalibrationClockConfig::RcSlowClk => release_rc_slow_clk(clocks),
-                Timg0CalibrationClockConfig::RcFastDivClk => release_rc_fast_div_clk(clocks),
-                Timg0CalibrationClockConfig::Osc32kClk => release_osc_slow_clk(clocks),
-            }
+        ) -> Option<Timg0CalibrationClockConfig> {
+            clocks.timg0_calibration_clock
         }
         pub fn request_timg0_calibration_clock(clocks: &mut ClockTree) {
+            trace!("Requesting TIMG0_CALIBRATION_CLOCK");
             if increment_reference_count(&mut clocks.timg0_calibration_clock_refcount) {
-                let selector = unwrap!(clocks.timg0_calibration_clock);
-                timg0_calibration_clock_request_upstream(clocks, selector);
+                trace!("Enabling TIMG0_CALIBRATION_CLOCK");
+                match unwrap!(clocks.timg0_calibration_clock) {
+                    Timg0CalibrationClockConfig::RcSlowClk => request_rc_slow_clk(clocks),
+                    Timg0CalibrationClockConfig::RcFastDivClk => request_rc_fast_div_clk(clocks),
+                    Timg0CalibrationClockConfig::Osc32kClk => request_osc_slow_clk(clocks),
+                }
                 enable_timg0_calibration_clock_impl(clocks, true);
             }
         }
         pub fn release_timg0_calibration_clock(clocks: &mut ClockTree) {
+            trace!("Releasing TIMG0_CALIBRATION_CLOCK");
             if decrement_reference_count(&mut clocks.timg0_calibration_clock_refcount) {
+                trace!("Disabling TIMG0_CALIBRATION_CLOCK");
                 enable_timg0_calibration_clock_impl(clocks, false);
-                let selector = unwrap!(clocks.timg0_calibration_clock);
-                timg0_calibration_clock_release_upstream(clocks, selector);
+                match unwrap!(clocks.timg0_calibration_clock) {
+                    Timg0CalibrationClockConfig::RcSlowClk => release_rc_slow_clk(clocks),
+                    Timg0CalibrationClockConfig::RcFastDivClk => release_rc_fast_div_clk(clocks),
+                    Timg0CalibrationClockConfig::Osc32kClk => release_osc_slow_clk(clocks),
+                }
             }
         }
         pub fn timg0_calibration_clock_frequency(clocks: &mut ClockTree) -> u32 {
@@ -1419,6 +1871,250 @@ macro_rules! define_clock_tree_types {
                 Timg0CalibrationClockConfig::Osc32kClk => osc_slow_clk_frequency(clocks),
             }
         }
+        pub fn configure_timg0_wdt_clock(
+            clocks: &mut ClockTree,
+            new_selector: Timg0WdtClockConfig,
+        ) {
+            let old_selector = clocks.timg0_wdt_clock.replace(new_selector);
+            if clocks.timg0_wdt_clock_refcount > 0 {
+                match new_selector {
+                    Timg0WdtClockConfig::Pll40m => request_pll_40m(clocks),
+                    Timg0WdtClockConfig::XtalClk => request_xtal_clk(clocks),
+                }
+                configure_timg0_wdt_clock_impl(clocks, old_selector, new_selector);
+                if let Some(old_selector) = old_selector {
+                    match old_selector {
+                        Timg0WdtClockConfig::Pll40m => release_pll_40m(clocks),
+                        Timg0WdtClockConfig::XtalClk => release_xtal_clk(clocks),
+                    }
+                }
+            } else {
+                configure_timg0_wdt_clock_impl(clocks, old_selector, new_selector);
+            }
+        }
+        pub fn timg0_wdt_clock_config(clocks: &mut ClockTree) -> Option<Timg0WdtClockConfig> {
+            clocks.timg0_wdt_clock
+        }
+        pub fn request_timg0_wdt_clock(clocks: &mut ClockTree) {
+            trace!("Requesting TIMG0_WDT_CLOCK");
+            if increment_reference_count(&mut clocks.timg0_wdt_clock_refcount) {
+                trace!("Enabling TIMG0_WDT_CLOCK");
+                match unwrap!(clocks.timg0_wdt_clock) {
+                    Timg0WdtClockConfig::Pll40m => request_pll_40m(clocks),
+                    Timg0WdtClockConfig::XtalClk => request_xtal_clk(clocks),
+                }
+                enable_timg0_wdt_clock_impl(clocks, true);
+            }
+        }
+        pub fn release_timg0_wdt_clock(clocks: &mut ClockTree) {
+            trace!("Releasing TIMG0_WDT_CLOCK");
+            if decrement_reference_count(&mut clocks.timg0_wdt_clock_refcount) {
+                trace!("Disabling TIMG0_WDT_CLOCK");
+                enable_timg0_wdt_clock_impl(clocks, false);
+                match unwrap!(clocks.timg0_wdt_clock) {
+                    Timg0WdtClockConfig::Pll40m => release_pll_40m(clocks),
+                    Timg0WdtClockConfig::XtalClk => release_xtal_clk(clocks),
+                }
+            }
+        }
+        pub fn timg0_wdt_clock_frequency(clocks: &mut ClockTree) -> u32 {
+            match unwrap!(clocks.timg0_wdt_clock) {
+                Timg0WdtClockConfig::Pll40m => pll_40m_frequency(clocks),
+                Timg0WdtClockConfig::XtalClk => xtal_clk_frequency(clocks),
+            }
+        }
+        pub fn configure_uart0_function_clock(
+            clocks: &mut ClockTree,
+            new_selector: Uart0FunctionClockConfig,
+        ) {
+            let old_selector = clocks.uart0_function_clock.replace(new_selector);
+            if clocks.uart0_function_clock_refcount > 0 {
+                match new_selector {
+                    Uart0FunctionClockConfig::PllF40m => request_pll_40m(clocks),
+                    Uart0FunctionClockConfig::RcFast => request_rc_fast_clk(clocks),
+                    Uart0FunctionClockConfig::Xtal => request_xtal_clk(clocks),
+                }
+                configure_uart0_function_clock_impl(clocks, old_selector, new_selector);
+                if let Some(old_selector) = old_selector {
+                    match old_selector {
+                        Uart0FunctionClockConfig::PllF40m => release_pll_40m(clocks),
+                        Uart0FunctionClockConfig::RcFast => release_rc_fast_clk(clocks),
+                        Uart0FunctionClockConfig::Xtal => release_xtal_clk(clocks),
+                    }
+                }
+            } else {
+                configure_uart0_function_clock_impl(clocks, old_selector, new_selector);
+            }
+        }
+        pub fn uart0_function_clock_config(
+            clocks: &mut ClockTree,
+        ) -> Option<Uart0FunctionClockConfig> {
+            clocks.uart0_function_clock
+        }
+        pub fn request_uart0_function_clock(clocks: &mut ClockTree) {
+            trace!("Requesting UART0_FUNCTION_CLOCK");
+            if increment_reference_count(&mut clocks.uart0_function_clock_refcount) {
+                trace!("Enabling UART0_FUNCTION_CLOCK");
+                match unwrap!(clocks.uart0_function_clock) {
+                    Uart0FunctionClockConfig::PllF40m => request_pll_40m(clocks),
+                    Uart0FunctionClockConfig::RcFast => request_rc_fast_clk(clocks),
+                    Uart0FunctionClockConfig::Xtal => request_xtal_clk(clocks),
+                }
+                enable_uart0_function_clock_impl(clocks, true);
+            }
+        }
+        pub fn release_uart0_function_clock(clocks: &mut ClockTree) {
+            trace!("Releasing UART0_FUNCTION_CLOCK");
+            if decrement_reference_count(&mut clocks.uart0_function_clock_refcount) {
+                trace!("Disabling UART0_FUNCTION_CLOCK");
+                enable_uart0_function_clock_impl(clocks, false);
+                match unwrap!(clocks.uart0_function_clock) {
+                    Uart0FunctionClockConfig::PllF40m => release_pll_40m(clocks),
+                    Uart0FunctionClockConfig::RcFast => release_rc_fast_clk(clocks),
+                    Uart0FunctionClockConfig::Xtal => release_xtal_clk(clocks),
+                }
+            }
+        }
+        pub fn uart0_function_clock_frequency(clocks: &mut ClockTree) -> u32 {
+            match unwrap!(clocks.uart0_function_clock) {
+                Uart0FunctionClockConfig::PllF40m => pll_40m_frequency(clocks),
+                Uart0FunctionClockConfig::RcFast => rc_fast_clk_frequency(clocks),
+                Uart0FunctionClockConfig::Xtal => xtal_clk_frequency(clocks),
+            }
+        }
+        pub fn configure_uart0_mem_clock(
+            clocks: &mut ClockTree,
+            new_selector: Uart0MemClockConfig,
+        ) {
+            let old_selector = clocks.uart0_mem_clock.replace(new_selector);
+            if clocks.uart0_mem_clock_refcount > 0 {
+                request_uart_mem_clk(clocks);
+                configure_uart0_mem_clock_impl(clocks, old_selector, new_selector);
+                if let Some(old_selector) = old_selector {
+                    release_uart_mem_clk(clocks);
+                }
+            } else {
+                configure_uart0_mem_clock_impl(clocks, old_selector, new_selector);
+            }
+        }
+        pub fn uart0_mem_clock_config(clocks: &mut ClockTree) -> Option<Uart0MemClockConfig> {
+            clocks.uart0_mem_clock
+        }
+        pub fn request_uart0_mem_clock(clocks: &mut ClockTree) {
+            trace!("Requesting UART0_MEM_CLOCK");
+            if increment_reference_count(&mut clocks.uart0_mem_clock_refcount) {
+                trace!("Enabling UART0_MEM_CLOCK");
+                request_uart_mem_clk(clocks);
+                enable_uart0_mem_clock_impl(clocks, true);
+            }
+        }
+        pub fn release_uart0_mem_clock(clocks: &mut ClockTree) {
+            trace!("Releasing UART0_MEM_CLOCK");
+            if decrement_reference_count(&mut clocks.uart0_mem_clock_refcount) {
+                trace!("Disabling UART0_MEM_CLOCK");
+                enable_uart0_mem_clock_impl(clocks, false);
+                release_uart_mem_clk(clocks);
+            }
+        }
+        pub fn uart0_mem_clock_frequency(clocks: &mut ClockTree) -> u32 {
+            uart_mem_clk_frequency(clocks)
+        }
+        pub fn configure_uart1_function_clock(
+            clocks: &mut ClockTree,
+            new_selector: Uart0FunctionClockConfig,
+        ) {
+            let old_selector = clocks.uart1_function_clock.replace(new_selector);
+            if clocks.uart1_function_clock_refcount > 0 {
+                match new_selector {
+                    Uart0FunctionClockConfig::PllF40m => request_pll_40m(clocks),
+                    Uart0FunctionClockConfig::RcFast => request_rc_fast_clk(clocks),
+                    Uart0FunctionClockConfig::Xtal => request_xtal_clk(clocks),
+                }
+                configure_uart1_function_clock_impl(clocks, old_selector, new_selector);
+                if let Some(old_selector) = old_selector {
+                    match old_selector {
+                        Uart0FunctionClockConfig::PllF40m => release_pll_40m(clocks),
+                        Uart0FunctionClockConfig::RcFast => release_rc_fast_clk(clocks),
+                        Uart0FunctionClockConfig::Xtal => release_xtal_clk(clocks),
+                    }
+                }
+            } else {
+                configure_uart1_function_clock_impl(clocks, old_selector, new_selector);
+            }
+        }
+        pub fn uart1_function_clock_config(
+            clocks: &mut ClockTree,
+        ) -> Option<Uart0FunctionClockConfig> {
+            clocks.uart1_function_clock
+        }
+        pub fn request_uart1_function_clock(clocks: &mut ClockTree) {
+            trace!("Requesting UART1_FUNCTION_CLOCK");
+            if increment_reference_count(&mut clocks.uart1_function_clock_refcount) {
+                trace!("Enabling UART1_FUNCTION_CLOCK");
+                match unwrap!(clocks.uart1_function_clock) {
+                    Uart0FunctionClockConfig::PllF40m => request_pll_40m(clocks),
+                    Uart0FunctionClockConfig::RcFast => request_rc_fast_clk(clocks),
+                    Uart0FunctionClockConfig::Xtal => request_xtal_clk(clocks),
+                }
+                enable_uart1_function_clock_impl(clocks, true);
+            }
+        }
+        pub fn release_uart1_function_clock(clocks: &mut ClockTree) {
+            trace!("Releasing UART1_FUNCTION_CLOCK");
+            if decrement_reference_count(&mut clocks.uart1_function_clock_refcount) {
+                trace!("Disabling UART1_FUNCTION_CLOCK");
+                enable_uart1_function_clock_impl(clocks, false);
+                match unwrap!(clocks.uart1_function_clock) {
+                    Uart0FunctionClockConfig::PllF40m => release_pll_40m(clocks),
+                    Uart0FunctionClockConfig::RcFast => release_rc_fast_clk(clocks),
+                    Uart0FunctionClockConfig::Xtal => release_xtal_clk(clocks),
+                }
+            }
+        }
+        pub fn uart1_function_clock_frequency(clocks: &mut ClockTree) -> u32 {
+            match unwrap!(clocks.uart1_function_clock) {
+                Uart0FunctionClockConfig::PllF40m => pll_40m_frequency(clocks),
+                Uart0FunctionClockConfig::RcFast => rc_fast_clk_frequency(clocks),
+                Uart0FunctionClockConfig::Xtal => xtal_clk_frequency(clocks),
+            }
+        }
+        pub fn configure_uart1_mem_clock(
+            clocks: &mut ClockTree,
+            new_selector: Uart0MemClockConfig,
+        ) {
+            let old_selector = clocks.uart1_mem_clock.replace(new_selector);
+            if clocks.uart1_mem_clock_refcount > 0 {
+                request_uart_mem_clk(clocks);
+                configure_uart1_mem_clock_impl(clocks, old_selector, new_selector);
+                if let Some(old_selector) = old_selector {
+                    release_uart_mem_clk(clocks);
+                }
+            } else {
+                configure_uart1_mem_clock_impl(clocks, old_selector, new_selector);
+            }
+        }
+        pub fn uart1_mem_clock_config(clocks: &mut ClockTree) -> Option<Uart0MemClockConfig> {
+            clocks.uart1_mem_clock
+        }
+        pub fn request_uart1_mem_clock(clocks: &mut ClockTree) {
+            trace!("Requesting UART1_MEM_CLOCK");
+            if increment_reference_count(&mut clocks.uart1_mem_clock_refcount) {
+                trace!("Enabling UART1_MEM_CLOCK");
+                request_uart_mem_clk(clocks);
+                enable_uart1_mem_clock_impl(clocks, true);
+            }
+        }
+        pub fn release_uart1_mem_clock(clocks: &mut ClockTree) {
+            trace!("Releasing UART1_MEM_CLOCK");
+            if decrement_reference_count(&mut clocks.uart1_mem_clock_refcount) {
+                trace!("Disabling UART1_MEM_CLOCK");
+                enable_uart1_mem_clock_impl(clocks, false);
+                release_uart_mem_clk(clocks);
+            }
+        }
+        pub fn uart1_mem_clock_frequency(clocks: &mut ClockTree) -> u32 {
+            uart_mem_clk_frequency(clocks)
+        }
         /// Clock tree configuration.
         ///
         /// The fields of this struct are optional, with the following caveats:
@@ -1426,8 +2122,9 @@ macro_rules! define_clock_tree_types {
         ///   if possible.
         /// - The CPU and its upstream clock nodes will be set to a default configuration.
         /// - Other unspecified clock sources will not be useable by peripherals.
-        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+        #[instability::unstable]
         pub struct ClockConfig {
             /// `XTAL_CLK` configuration.
             pub xtal_clk: Option<XtalClkConfig>,
@@ -1478,11 +2175,11 @@ macro_rules! define_clock_tree_types {
         }
         fn increment_reference_count(refcount: &mut u32) -> bool {
             let first = *refcount == 0;
-            *refcount += 1;
+            *refcount = unwrap!(refcount.checked_add(1), "Reference count overflow");
             first
         }
         fn decrement_reference_count(refcount: &mut u32) -> bool {
-            *refcount -= 1;
+            *refcount = refcount.saturating_sub(1);
             let last = *refcount == 0;
             last
         }
@@ -1710,22 +2407,6 @@ macro_rules! memory_range {
         "66416"
     };
 }
-#[macro_export]
-#[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
-macro_rules! for_each_sha_algorithm {
-    ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((Sha1, "SHA-1"(sizes : 64, 20, 8) (insecure_against :
-        "collision", "length extension"), 0)); _for_each_inner!((Sha224, "SHA-224"(sizes
-        : 64, 28, 8) (insecure_against : "length extension"), 1));
-        _for_each_inner!((Sha256, "SHA-256"(sizes : 64, 32, 8) (insecure_against :
-        "length extension"), 2)); _for_each_inner!((algos(Sha1, "SHA-1"(sizes : 64, 20,
-        8) (insecure_against : "collision", "length extension"), 0), (Sha224,
-        "SHA-224"(sizes : 64, 28, 8) (insecure_against : "length extension"), 1),
-        (Sha256, "SHA-256"(sizes : 64, 32, 8) (insecure_against : "length extension"),
-        2)));
-    };
-}
 /// This macro can be used to generate code for each peripheral instance of the I2C master driver.
 ///
 /// For an explanation on the general syntax, as well as usage of individual/repeated
@@ -1733,22 +2414,23 @@ macro_rules! for_each_sha_algorithm {
 ///
 /// This macro has one option for its "Individual matcher" case:
 ///
-/// Syntax: `($instance:ident, $sys:ident, $scl:ident, $sda:ident)`
+/// Syntax: `($id:literal, $instance:ident, $sys:ident, $scl:ident, $sda:ident)`
 ///
 /// Macro fragments:
-///
+/// - `$id`: the index of the I2C instance
 /// - `$instance`: the name of the I2C instance
 /// - `$sys`: the name of the instance as it is in the `esp_hal::system::Peripheral` enum.
 /// - `$scl`, `$sda`: peripheral signal names.
 ///
-/// Example data: `(I2C0, I2cExt0, I2CEXT0_SCL, I2CEXT0_SDA)`
+/// Example data: `(0, I2C0, I2cExt0, I2CEXT0_SCL, I2CEXT0_SDA)`
 #[macro_export]
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_i2c_master {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((I2C0, I2cExt0, I2CEXT0_SCL, I2CEXT0_SDA));
-        _for_each_inner!((all(I2C0, I2cExt0, I2CEXT0_SCL, I2CEXT0_SDA)));
+        macro_rules! _for_each_inner_i2c_master { $(($pattern) => $code;)* ($other : tt)
+        => {} } _for_each_inner_i2c_master!((0, I2C0, I2cExt0, I2CEXT0_SCL,
+        I2CEXT0_SDA)); _for_each_inner_i2c_master!((all(0, I2C0, I2cExt0, I2CEXT0_SCL,
+        I2CEXT0_SDA)));
     };
 }
 /// This macro can be used to generate code for each peripheral instance of the UART driver.
@@ -1758,24 +2440,26 @@ macro_rules! for_each_i2c_master {
 ///
 /// This macro has one option for its "Individual matcher" case:
 ///
-/// Syntax: `($instance:ident, $sys:ident, $rx:ident, $tx:ident, $cts:ident, $rts:ident)`
+/// Syntax: `($id:literal, $instance:ident, $sys:ident, $rx:ident, $tx:ident, $cts:ident,
+/// $rts:ident)`
 ///
 /// Macro fragments:
 ///
+/// - `$id`: the index of the UART instance
 /// - `$instance`: the name of the UART instance
 /// - `$sys`: the name of the instance as it is in the `esp_hal::system::Peripheral` enum.
 /// - `$rx`, `$tx`, `$cts`, `$rts`: signal names.
 ///
-/// Example data: `(UART0, Uart0, U0RXD, U0TXD, U0CTS, U0RTS)`
+/// Example data: `(0, UART0, Uart0, U0RXD, U0TXD, U0CTS, U0RTS)`
 #[macro_export]
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_uart {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((UART0, Uart0, U0RXD, U0TXD, U0CTS, U0RTS));
-        _for_each_inner!((UART1, Uart1, U1RXD, U1TXD, U1CTS, U1RTS));
-        _for_each_inner!((all(UART0, Uart0, U0RXD, U0TXD, U0CTS, U0RTS), (UART1, Uart1,
-        U1RXD, U1TXD, U1CTS, U1RTS)));
+        macro_rules! _for_each_inner_uart { $(($pattern) => $code;)* ($other : tt) => {}
+        } _for_each_inner_uart!((0, UART0, Uart0, U0RXD, U0TXD, U0CTS, U0RTS));
+        _for_each_inner_uart!((1, UART1, Uart1, U1RXD, U1TXD, U1CTS, U1RTS));
+        _for_each_inner_uart!((all(0, UART0, Uart0, U0RXD, U0TXD, U0CTS, U0RTS), (1,
+        UART1, Uart1, U1RXD, U1TXD, U1CTS, U1RTS)));
     };
 }
 /// This macro can be used to generate code for each peripheral instance of the SPI master driver.
@@ -1785,8 +2469,8 @@ macro_rules! for_each_uart {
 ///
 /// This macro has one option for its "Individual matcher" case:
 ///
-/// Syntax: `($instance:ident, $sys:ident, $sclk:ident, [$($cs:ident),*] [$($sio:ident),*
-/// $($is_qspi:iteral)?])`
+/// Syntax: `($instance:ident, $sys:ident, $sclk:ident [$($cs:ident),*] [$($sio:ident),*]
+/// $($is_qspi:literal)?)`
 ///
 /// Macro fragments:
 ///
@@ -1803,11 +2487,11 @@ macro_rules! for_each_uart {
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_spi_master {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((SPI2, Spi2, FSPICLK[FSPICS0, FSPICS1, FSPICS2, FSPICS3,
-        FSPICS4, FSPICS5] [FSPID, FSPIQ, FSPIWP, FSPIHD], true));
-        _for_each_inner!((all(SPI2, Spi2, FSPICLK[FSPICS0, FSPICS1, FSPICS2, FSPICS3,
-        FSPICS4, FSPICS5] [FSPID, FSPIQ, FSPIWP, FSPIHD], true)));
+        macro_rules! _for_each_inner_spi_master { $(($pattern) => $code;)* ($other : tt)
+        => {} } _for_each_inner_spi_master!((SPI2, Spi2, FSPICLK[FSPICS0, FSPICS1,
+        FSPICS2, FSPICS3, FSPICS4, FSPICS5] [FSPID, FSPIQ, FSPIWP, FSPIHD], true));
+        _for_each_inner_spi_master!((all(SPI2, Spi2, FSPICLK[FSPICS0, FSPICS1, FSPICS2,
+        FSPICS3, FSPICS4, FSPICS5] [FSPID, FSPIQ, FSPIWP, FSPIHD], true)));
     };
 }
 /// This macro can be used to generate code for each peripheral instance of the SPI slave driver.
@@ -1821,162 +2505,406 @@ macro_rules! for_each_spi_master {
 ///
 /// Macro fragments:
 ///
-/// - `$instance`: the name of the I2C instance
+/// - `$instance`: the name of the SPI instance
 /// - `$sys`: the name of the instance as it is in the `esp_hal::system::Peripheral` enum.
-/// - `$mosi`, `$miso`, `$cs`: signal names.
+/// - `$sclk`, `$mosi`, `$miso`, `$cs`: signal names.
 ///
 /// Example data: `(SPI2, Spi2, FSPICLK, FSPID, FSPIQ, FSPICS0)`
 #[macro_export]
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_spi_slave {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((SPI2, Spi2, FSPICLK, FSPID, FSPIQ, FSPICS0));
-        _for_each_inner!((all(SPI2, Spi2, FSPICLK, FSPID, FSPIQ, FSPICS0)));
+        macro_rules! _for_each_inner_spi_slave { $(($pattern) => $code;)* ($other : tt)
+        => {} } _for_each_inner_spi_slave!((SPI2, Spi2, FSPICLK, FSPID, FSPIQ, FSPICS0));
+        _for_each_inner_spi_slave!((all(SPI2, Spi2, FSPICLK, FSPID, FSPIQ, FSPICS0)));
     };
 }
 #[macro_export]
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_peripheral {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((@ peri_type GPIO0 <= virtual())); _for_each_inner!((@ peri_type
-        GPIO1 <= virtual())); _for_each_inner!((@ peri_type GPIO2 <= virtual()));
-        _for_each_inner!((@ peri_type GPIO3 <= virtual())); _for_each_inner!((@ peri_type
-        GPIO4 <= virtual())); _for_each_inner!((@ peri_type GPIO5 <= virtual()));
-        _for_each_inner!((@ peri_type GPIO6 <= virtual())); _for_each_inner!((@ peri_type
-        GPIO7 <= virtual())); _for_each_inner!((@ peri_type GPIO8 <= virtual()));
-        _for_each_inner!((@ peri_type GPIO9 <= virtual())); _for_each_inner!((@ peri_type
-        GPIO10 <= virtual())); _for_each_inner!((@ peri_type GPIO11 <= virtual()));
-        _for_each_inner!((@ peri_type GPIO12 <= virtual())); _for_each_inner!((@
-        peri_type GPIO13 <= virtual())); _for_each_inner!((@ peri_type GPIO14 <=
-        virtual())); _for_each_inner!((@ peri_type GPIO15 <= virtual()));
-        _for_each_inner!((@ peri_type GPIO16 <= virtual())); _for_each_inner!((@
-        peri_type GPIO17 <= virtual())); _for_each_inner!((@ peri_type GPIO18 <=
-        virtual())); _for_each_inner!((@ peri_type GPIO19 <= virtual()));
-        _for_each_inner!((@ peri_type GPIO20 <= virtual())); _for_each_inner!((@
-        peri_type APB_CTRL <= APB_CTRL() (unstable))); _for_each_inner!((@ peri_type
-        APB_SARADC <= APB_SARADC() (unstable))); _for_each_inner!((@ peri_type BB <= BB()
-        (unstable))); _for_each_inner!((@ peri_type ASSIST_DEBUG <= ASSIST_DEBUG()
-        (unstable))); _for_each_inner!((@ peri_type DMA <= DMA() (unstable)));
-        _for_each_inner!((@ peri_type ECC <= ECC() (unstable))); _for_each_inner!((@
-        peri_type EFUSE <= EFUSE() (unstable))); _for_each_inner!((@ peri_type EXTMEM <=
-        EXTMEM() (unstable))); _for_each_inner!((@ peri_type GPIO <= GPIO() (unstable)));
-        _for_each_inner!((@ peri_type I2C_ANA_MST <= I2C_ANA_MST() (unstable)));
-        _for_each_inner!((@ peri_type I2C0 <= I2C0(I2C_EXT0 : { bind_peri_interrupt,
-        enable_peri_interrupt, disable_peri_interrupt }))); _for_each_inner!((@ peri_type
-        INTERRUPT_CORE0 <= INTERRUPT_CORE0() (unstable))); _for_each_inner!((@ peri_type
-        IO_MUX <= IO_MUX() (unstable))); _for_each_inner!((@ peri_type LEDC <= LEDC()
-        (unstable))); _for_each_inner!((@ peri_type RNG <= RNG() (unstable)));
-        _for_each_inner!((@ peri_type LPWR <= RTC_CNTL() (unstable)));
-        _for_each_inner!((@ peri_type MODEM_CLKRST <= MODEM_CLKRST() (unstable)));
-        _for_each_inner!((@ peri_type SENSITIVE <= SENSITIVE() (unstable)));
-        _for_each_inner!((@ peri_type SHA <= SHA(SHA : { bind_peri_interrupt,
-        enable_peri_interrupt, disable_peri_interrupt }) (unstable)));
-        _for_each_inner!((@ peri_type SPI0 <= SPI0() (unstable))); _for_each_inner!((@
-        peri_type SPI1 <= SPI1() (unstable))); _for_each_inner!((@ peri_type SPI2 <=
-        SPI2(SPI2 : { bind_peri_interrupt, enable_peri_interrupt, disable_peri_interrupt
-        }))); _for_each_inner!((@ peri_type SYSTEM <= SYSTEM() (unstable)));
-        _for_each_inner!((@ peri_type SYSTIMER <= SYSTIMER() (unstable)));
-        _for_each_inner!((@ peri_type TIMG0 <= TIMG0() (unstable))); _for_each_inner!((@
-        peri_type UART0 <= UART0(UART0 : { bind_peri_interrupt, enable_peri_interrupt,
-        disable_peri_interrupt }))); _for_each_inner!((@ peri_type UART1 <= UART1(UART1 :
-        { bind_peri_interrupt, enable_peri_interrupt, disable_peri_interrupt })));
-        _for_each_inner!((@ peri_type XTS_AES <= XTS_AES() (unstable)));
-        _for_each_inner!((@ peri_type DMA_CH0 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type ADC1 <= virtual() (unstable))); _for_each_inner!((@
-        peri_type BT <= virtual() (unstable))); _for_each_inner!((@ peri_type FLASH <=
-        virtual() (unstable))); _for_each_inner!((@ peri_type SW_INTERRUPT <= virtual()
-        (unstable))); _for_each_inner!((@ peri_type WIFI <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM1 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM2 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM3 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM4 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM5 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM6 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM7 <= virtual() (unstable)));
-        _for_each_inner!((@ peri_type MEM2MEM8 <= virtual() (unstable)));
-        _for_each_inner!((GPIO0)); _for_each_inner!((GPIO1)); _for_each_inner!((GPIO2));
-        _for_each_inner!((GPIO3)); _for_each_inner!((GPIO4)); _for_each_inner!((GPIO5));
-        _for_each_inner!((GPIO6)); _for_each_inner!((GPIO7)); _for_each_inner!((GPIO8));
-        _for_each_inner!((GPIO9)); _for_each_inner!((GPIO10));
-        _for_each_inner!((GPIO18)); _for_each_inner!((GPIO19));
-        _for_each_inner!((GPIO20)); _for_each_inner!((APB_CTRL(unstable)));
-        _for_each_inner!((APB_SARADC(unstable))); _for_each_inner!((BB(unstable)));
-        _for_each_inner!((ASSIST_DEBUG(unstable))); _for_each_inner!((DMA(unstable)));
-        _for_each_inner!((ECC(unstable))); _for_each_inner!((EFUSE(unstable)));
-        _for_each_inner!((EXTMEM(unstable))); _for_each_inner!((GPIO(unstable)));
-        _for_each_inner!((I2C_ANA_MST(unstable))); _for_each_inner!((I2C0));
-        _for_each_inner!((INTERRUPT_CORE0(unstable)));
-        _for_each_inner!((IO_MUX(unstable))); _for_each_inner!((LEDC(unstable)));
-        _for_each_inner!((RNG(unstable))); _for_each_inner!((LPWR(unstable)));
-        _for_each_inner!((MODEM_CLKRST(unstable)));
-        _for_each_inner!((SENSITIVE(unstable))); _for_each_inner!((SHA(unstable)));
-        _for_each_inner!((SPI0(unstable))); _for_each_inner!((SPI1(unstable)));
-        _for_each_inner!((SPI2)); _for_each_inner!((SYSTEM(unstable)));
-        _for_each_inner!((SYSTIMER(unstable))); _for_each_inner!((TIMG0(unstable)));
-        _for_each_inner!((UART0)); _for_each_inner!((UART1));
-        _for_each_inner!((XTS_AES(unstable))); _for_each_inner!((DMA_CH0(unstable)));
-        _for_each_inner!((ADC1(unstable))); _for_each_inner!((BT(unstable)));
-        _for_each_inner!((FLASH(unstable))); _for_each_inner!((SW_INTERRUPT(unstable)));
-        _for_each_inner!((WIFI(unstable))); _for_each_inner!((MEM2MEM1(unstable)));
-        _for_each_inner!((MEM2MEM2(unstable))); _for_each_inner!((MEM2MEM3(unstable)));
-        _for_each_inner!((MEM2MEM4(unstable))); _for_each_inner!((MEM2MEM5(unstable)));
-        _for_each_inner!((MEM2MEM6(unstable))); _for_each_inner!((MEM2MEM7(unstable)));
-        _for_each_inner!((MEM2MEM8(unstable))); _for_each_inner!((all(@ peri_type GPIO0
-        <= virtual()), (@ peri_type GPIO1 <= virtual()), (@ peri_type GPIO2 <=
-        virtual()), (@ peri_type GPIO3 <= virtual()), (@ peri_type GPIO4 <= virtual()),
-        (@ peri_type GPIO5 <= virtual()), (@ peri_type GPIO6 <= virtual()), (@ peri_type
-        GPIO7 <= virtual()), (@ peri_type GPIO8 <= virtual()), (@ peri_type GPIO9 <=
-        virtual()), (@ peri_type GPIO10 <= virtual()), (@ peri_type GPIO11 <= virtual()),
-        (@ peri_type GPIO12 <= virtual()), (@ peri_type GPIO13 <= virtual()), (@
-        peri_type GPIO14 <= virtual()), (@ peri_type GPIO15 <= virtual()), (@ peri_type
-        GPIO16 <= virtual()), (@ peri_type GPIO17 <= virtual()), (@ peri_type GPIO18 <=
-        virtual()), (@ peri_type GPIO19 <= virtual()), (@ peri_type GPIO20 <= virtual()),
-        (@ peri_type APB_CTRL <= APB_CTRL() (unstable)), (@ peri_type APB_SARADC <=
-        APB_SARADC() (unstable)), (@ peri_type BB <= BB() (unstable)), (@ peri_type
-        ASSIST_DEBUG <= ASSIST_DEBUG() (unstable)), (@ peri_type DMA <= DMA()
-        (unstable)), (@ peri_type ECC <= ECC() (unstable)), (@ peri_type EFUSE <= EFUSE()
-        (unstable)), (@ peri_type EXTMEM <= EXTMEM() (unstable)), (@ peri_type GPIO <=
-        GPIO() (unstable)), (@ peri_type I2C_ANA_MST <= I2C_ANA_MST() (unstable)), (@
-        peri_type I2C0 <= I2C0(I2C_EXT0 : { bind_peri_interrupt, enable_peri_interrupt,
-        disable_peri_interrupt })), (@ peri_type INTERRUPT_CORE0 <= INTERRUPT_CORE0()
-        (unstable)), (@ peri_type IO_MUX <= IO_MUX() (unstable)), (@ peri_type LEDC <=
-        LEDC() (unstable)), (@ peri_type RNG <= RNG() (unstable)), (@ peri_type LPWR <=
-        RTC_CNTL() (unstable)), (@ peri_type MODEM_CLKRST <= MODEM_CLKRST() (unstable)),
-        (@ peri_type SENSITIVE <= SENSITIVE() (unstable)), (@ peri_type SHA <= SHA(SHA :
-        { bind_peri_interrupt, enable_peri_interrupt, disable_peri_interrupt })
-        (unstable)), (@ peri_type SPI0 <= SPI0() (unstable)), (@ peri_type SPI1 <= SPI1()
-        (unstable)), (@ peri_type SPI2 <= SPI2(SPI2 : { bind_peri_interrupt,
-        enable_peri_interrupt, disable_peri_interrupt })), (@ peri_type SYSTEM <=
-        SYSTEM() (unstable)), (@ peri_type SYSTIMER <= SYSTIMER() (unstable)), (@
-        peri_type TIMG0 <= TIMG0() (unstable)), (@ peri_type UART0 <= UART0(UART0 : {
+        macro_rules! _for_each_inner_peripheral { $(($pattern) => $code;)* ($other : tt)
+        => {} } _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO0 peripheral singleton"] GPIO0 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "GPIO1 peripheral singleton"]
+        GPIO1 <= virtual())); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO2 peripheral singleton"] GPIO2 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "GPIO3 peripheral singleton"]
+        GPIO3 <= virtual())); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO4 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO4 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO5 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO5 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO6 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO6 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO7 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO7 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO8 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin is a strapping pin, it determines how the chip boots.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO8 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO9 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin is a strapping pin, it determines how the chip boots.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO9 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "GPIO10 peripheral singleton"]
+        GPIO10 <= virtual())); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO11 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO11 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO12 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO12 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO13 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO13 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO14 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO14 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO15 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO15 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO16 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO16 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO17 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO17 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "GPIO18 peripheral singleton"]
+        GPIO18 <= virtual())); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO19 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>By default, this pin is used by the UART programming interface.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO19 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO20 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>By default, this pin is used by the UART programming interface.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO20 <= virtual()));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "APB_CTRL peripheral singleton"]
+        APB_CTRL <= APB_CTRL() (unstable))); _for_each_inner_peripheral!((@ peri_type
+        #[doc = "APB_SARADC peripheral singleton"] APB_SARADC <= APB_SARADC()
+        (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "BB peripheral singleton"] BB <= BB() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "ASSIST_DEBUG peripheral singleton"] ASSIST_DEBUG <= ASSIST_DEBUG() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "DMA peripheral singleton"] DMA
+        <= DMA() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "ECC peripheral singleton"] ECC <= ECC() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "EFUSE peripheral singleton"]
+        EFUSE <= EFUSE() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "EXTMEM peripheral singleton"] EXTMEM <= EXTMEM() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "GPIO peripheral singleton"]
+        GPIO <= GPIO() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "I2C_ANA_MST peripheral singleton"] I2C_ANA_MST <= I2C_ANA_MST() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "I2C0 peripheral singleton"]
+        I2C0 <= I2C0(I2C_EXT0 : { bind_peri_interrupt, enable_peri_interrupt,
+        disable_peri_interrupt }))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "INTERRUPT_CORE0 peripheral singleton"] INTERRUPT_CORE0 <= INTERRUPT_CORE0()
+        (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "IO_MUX peripheral singleton"] IO_MUX <= IO_MUX() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "LEDC peripheral singleton"]
+        LEDC <= LEDC() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "RNG peripheral singleton"] RNG <= RNG() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "LPWR peripheral singleton"]
+        LPWR <= RTC_CNTL() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "MODEM_CLKRST peripheral singleton"] MODEM_CLKRST <= MODEM_CLKRST() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "SENSITIVE peripheral singleton"] SENSITIVE <= SENSITIVE() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "SHA peripheral singleton"] SHA
+        <= SHA(SHA : { bind_peri_interrupt, enable_peri_interrupt, disable_peri_interrupt
+        }) (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "SPI0 peripheral singleton"] SPI0 <= SPI0() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "SPI1 peripheral singleton"]
+        SPI1 <= SPI1() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "SPI2 peripheral singleton"] SPI2 <= SPI2(SPI2 : { bind_peri_interrupt,
+        enable_peri_interrupt, disable_peri_interrupt })));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "SYSTEM peripheral singleton"]
+        SYSTEM <= SYSTEM() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "SYSTIMER peripheral singleton"] SYSTIMER <= SYSTIMER() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "TIMG0 peripheral singleton"]
+        TIMG0 <= TIMG0() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "UART0 peripheral singleton"] UART0 <= UART0(UART0 : { bind_peri_interrupt,
+        enable_peri_interrupt, disable_peri_interrupt })));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "UART1 peripheral singleton"]
+        UART1 <= UART1(UART1 : { bind_peri_interrupt, enable_peri_interrupt,
+        disable_peri_interrupt }))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "XTS_AES peripheral singleton"] XTS_AES <= XTS_AES() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "DMA_CH0 peripheral singleton"]
+        DMA_CH0 <= virtual() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc
+        = "ADC1 peripheral singleton"] ADC1 <= virtual() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "BT peripheral singleton"] BT <=
+        virtual(LP_TIMER : { bind_lp_timer_interrupt, enable_lp_timer_interrupt,
+        disable_lp_timer_interrupt }, BT_MAC : { bind_mac_interrupt,
+        enable_mac_interrupt, disable_mac_interrupt }) (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "FLASH peripheral singleton"]
+        FLASH <= virtual() (unstable))); _for_each_inner_peripheral!((@ peri_type #[doc =
+        "GPIO_DEDICATED peripheral singleton"] GPIO_DEDICATED <= virtual() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc =
+        "SW_INTERRUPT peripheral singleton"] SW_INTERRUPT <= virtual() (unstable)));
+        _for_each_inner_peripheral!((@ peri_type #[doc = "WIFI peripheral singleton"]
+        WIFI <= virtual(WIFI_MAC : { bind_mac_interrupt, enable_mac_interrupt,
+        disable_mac_interrupt }, WIFI_PWR : { bind_pwr_interrupt, enable_pwr_interrupt,
+        disable_pwr_interrupt }) (unstable))); _for_each_inner_peripheral!((GPIO0));
+        _for_each_inner_peripheral!((GPIO1)); _for_each_inner_peripheral!((GPIO2));
+        _for_each_inner_peripheral!((GPIO3)); _for_each_inner_peripheral!((GPIO4));
+        _for_each_inner_peripheral!((GPIO5)); _for_each_inner_peripheral!((GPIO6));
+        _for_each_inner_peripheral!((GPIO7)); _for_each_inner_peripheral!((GPIO8));
+        _for_each_inner_peripheral!((GPIO9)); _for_each_inner_peripheral!((GPIO10));
+        _for_each_inner_peripheral!((GPIO11)); _for_each_inner_peripheral!((GPIO12));
+        _for_each_inner_peripheral!((GPIO13)); _for_each_inner_peripheral!((GPIO14));
+        _for_each_inner_peripheral!((GPIO15)); _for_each_inner_peripheral!((GPIO16));
+        _for_each_inner_peripheral!((GPIO17)); _for_each_inner_peripheral!((GPIO18));
+        _for_each_inner_peripheral!((GPIO19)); _for_each_inner_peripheral!((GPIO20));
+        _for_each_inner_peripheral!((APB_CTRL(unstable)));
+        _for_each_inner_peripheral!((APB_SARADC(unstable)));
+        _for_each_inner_peripheral!((BB(unstable)));
+        _for_each_inner_peripheral!((ASSIST_DEBUG(unstable)));
+        _for_each_inner_peripheral!((DMA(unstable)));
+        _for_each_inner_peripheral!((ECC(unstable)));
+        _for_each_inner_peripheral!((EXTMEM(unstable)));
+        _for_each_inner_peripheral!((GPIO(unstable)));
+        _for_each_inner_peripheral!((I2C_ANA_MST(unstable)));
+        _for_each_inner_peripheral!((I2C0));
+        _for_each_inner_peripheral!((INTERRUPT_CORE0(unstable)));
+        _for_each_inner_peripheral!((IO_MUX(unstable)));
+        _for_each_inner_peripheral!((LEDC(unstable)));
+        _for_each_inner_peripheral!((RNG(unstable)));
+        _for_each_inner_peripheral!((LPWR(unstable)));
+        _for_each_inner_peripheral!((MODEM_CLKRST(unstable)));
+        _for_each_inner_peripheral!((SENSITIVE(unstable)));
+        _for_each_inner_peripheral!((SHA(unstable)));
+        _for_each_inner_peripheral!((SPI0(unstable)));
+        _for_each_inner_peripheral!((SPI1(unstable)));
+        _for_each_inner_peripheral!((SPI2));
+        _for_each_inner_peripheral!((SYSTEM(unstable)));
+        _for_each_inner_peripheral!((SYSTIMER(unstable)));
+        _for_each_inner_peripheral!((TIMG0(unstable)));
+        _for_each_inner_peripheral!((UART0)); _for_each_inner_peripheral!((UART1));
+        _for_each_inner_peripheral!((XTS_AES(unstable)));
+        _for_each_inner_peripheral!((DMA_CH0(unstable)));
+        _for_each_inner_peripheral!((ADC1(unstable)));
+        _for_each_inner_peripheral!((BT(unstable)));
+        _for_each_inner_peripheral!((FLASH(unstable)));
+        _for_each_inner_peripheral!((GPIO_DEDICATED(unstable)));
+        _for_each_inner_peripheral!((SW_INTERRUPT(unstable)));
+        _for_each_inner_peripheral!((WIFI(unstable))); _for_each_inner_peripheral!((SPI2,
+        Spi2, 0)); _for_each_inner_peripheral!((SHA, Sha, 7));
+        _for_each_inner_peripheral!((all(@ peri_type #[doc =
+        "GPIO0 peripheral singleton"] GPIO0 <= virtual()), (@ peri_type #[doc =
+        "GPIO1 peripheral singleton"] GPIO1 <= virtual()), (@ peri_type #[doc =
+        "GPIO2 peripheral singleton"] GPIO2 <= virtual()), (@ peri_type #[doc =
+        "GPIO3 peripheral singleton"] GPIO3 <= virtual()), (@ peri_type #[doc =
+        "GPIO4 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO4 <= virtual()), (@ peri_type #[doc =
+        "GPIO5 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO5 <= virtual()), (@ peri_type #[doc =
+        "GPIO6 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO6 <= virtual()), (@ peri_type #[doc =
+        "GPIO7 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>These pins may be used to debug the chip using an external JTAG debugger.</li>"]
+        #[doc = "</ul>"] #[doc = "</section>"] GPIO7 <= virtual()), (@ peri_type #[doc =
+        "GPIO8 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin is a strapping pin, it determines how the chip boots.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO8 <= virtual()), (@ peri_type #[doc =
+        "GPIO9 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin is a strapping pin, it determines how the chip boots.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO9 <= virtual()), (@ peri_type #[doc =
+        "GPIO10 peripheral singleton"] GPIO10 <= virtual()), (@ peri_type #[doc =
+        "GPIO11 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO11 <= virtual()), (@ peri_type #[doc =
+        "GPIO12 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO12 <= virtual()), (@ peri_type #[doc =
+        "GPIO13 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO13 <= virtual()), (@ peri_type #[doc =
+        "GPIO14 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO14 <= virtual()), (@ peri_type #[doc =
+        "GPIO15 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO15 <= virtual()), (@ peri_type #[doc =
+        "GPIO16 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO16 <= virtual()), (@ peri_type #[doc =
+        "GPIO17 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>This pin may be reserved for interfacing with SPI flash.</li>"] #[doc =
+        "</ul>"] #[doc = "</section>"] GPIO17 <= virtual()), (@ peri_type #[doc =
+        "GPIO18 peripheral singleton"] GPIO18 <= virtual()), (@ peri_type #[doc =
+        "GPIO19 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>By default, this pin is used by the UART programming interface.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO19 <= virtual()), (@ peri_type #[doc =
+        "GPIO20 peripheral singleton (Limitations exist)"] #[doc = ""] #[doc =
+        "<section class=\"warning\">"] #[doc =
+        "This pin may be available with certain limitations. Check your hardware to make sure whether you can use it."]
+        #[doc = "<ul>"] #[doc =
+        "<li>By default, this pin is used by the UART programming interface.</li>"] #[doc
+        = "</ul>"] #[doc = "</section>"] GPIO20 <= virtual()), (@ peri_type #[doc =
+        "APB_CTRL peripheral singleton"] APB_CTRL <= APB_CTRL() (unstable)), (@ peri_type
+        #[doc = "APB_SARADC peripheral singleton"] APB_SARADC <= APB_SARADC()
+        (unstable)), (@ peri_type #[doc = "BB peripheral singleton"] BB <= BB()
+        (unstable)), (@ peri_type #[doc = "ASSIST_DEBUG peripheral singleton"]
+        ASSIST_DEBUG <= ASSIST_DEBUG() (unstable)), (@ peri_type #[doc =
+        "DMA peripheral singleton"] DMA <= DMA() (unstable)), (@ peri_type #[doc =
+        "ECC peripheral singleton"] ECC <= ECC() (unstable)), (@ peri_type #[doc =
+        "EFUSE peripheral singleton"] EFUSE <= EFUSE() (unstable)), (@ peri_type #[doc =
+        "EXTMEM peripheral singleton"] EXTMEM <= EXTMEM() (unstable)), (@ peri_type #[doc
+        = "GPIO peripheral singleton"] GPIO <= GPIO() (unstable)), (@ peri_type #[doc =
+        "I2C_ANA_MST peripheral singleton"] I2C_ANA_MST <= I2C_ANA_MST() (unstable)), (@
+        peri_type #[doc = "I2C0 peripheral singleton"] I2C0 <= I2C0(I2C_EXT0 : {
         bind_peri_interrupt, enable_peri_interrupt, disable_peri_interrupt })), (@
-        peri_type UART1 <= UART1(UART1 : { bind_peri_interrupt, enable_peri_interrupt,
-        disable_peri_interrupt })), (@ peri_type XTS_AES <= XTS_AES() (unstable)), (@
-        peri_type DMA_CH0 <= virtual() (unstable)), (@ peri_type ADC1 <= virtual()
-        (unstable)), (@ peri_type BT <= virtual() (unstable)), (@ peri_type FLASH <=
-        virtual() (unstable)), (@ peri_type SW_INTERRUPT <= virtual() (unstable)), (@
-        peri_type WIFI <= virtual() (unstable)), (@ peri_type MEM2MEM1 <= virtual()
-        (unstable)), (@ peri_type MEM2MEM2 <= virtual() (unstable)), (@ peri_type
-        MEM2MEM3 <= virtual() (unstable)), (@ peri_type MEM2MEM4 <= virtual()
-        (unstable)), (@ peri_type MEM2MEM5 <= virtual() (unstable)), (@ peri_type
-        MEM2MEM6 <= virtual() (unstable)), (@ peri_type MEM2MEM7 <= virtual()
-        (unstable)), (@ peri_type MEM2MEM8 <= virtual() (unstable))));
-        _for_each_inner!((singletons(GPIO0), (GPIO1), (GPIO2), (GPIO3), (GPIO4), (GPIO5),
-        (GPIO6), (GPIO7), (GPIO8), (GPIO9), (GPIO10), (GPIO18), (GPIO19), (GPIO20),
-        (APB_CTRL(unstable)), (APB_SARADC(unstable)), (BB(unstable)),
-        (ASSIST_DEBUG(unstable)), (DMA(unstable)), (ECC(unstable)), (EFUSE(unstable)),
-        (EXTMEM(unstable)), (GPIO(unstable)), (I2C_ANA_MST(unstable)), (I2C0),
-        (INTERRUPT_CORE0(unstable)), (IO_MUX(unstable)), (LEDC(unstable)),
-        (RNG(unstable)), (LPWR(unstable)), (MODEM_CLKRST(unstable)),
-        (SENSITIVE(unstable)), (SHA(unstable)), (SPI0(unstable)), (SPI1(unstable)),
-        (SPI2), (SYSTEM(unstable)), (SYSTIMER(unstable)), (TIMG0(unstable)), (UART0),
-        (UART1), (XTS_AES(unstable)), (DMA_CH0(unstable)), (ADC1(unstable)),
-        (BT(unstable)), (FLASH(unstable)), (SW_INTERRUPT(unstable)), (WIFI(unstable)),
-        (MEM2MEM1(unstable)), (MEM2MEM2(unstable)), (MEM2MEM3(unstable)),
-        (MEM2MEM4(unstable)), (MEM2MEM5(unstable)), (MEM2MEM6(unstable)),
-        (MEM2MEM7(unstable)), (MEM2MEM8(unstable))));
+        peri_type #[doc = "INTERRUPT_CORE0 peripheral singleton"] INTERRUPT_CORE0 <=
+        INTERRUPT_CORE0() (unstable)), (@ peri_type #[doc =
+        "IO_MUX peripheral singleton"] IO_MUX <= IO_MUX() (unstable)), (@ peri_type #[doc
+        = "LEDC peripheral singleton"] LEDC <= LEDC() (unstable)), (@ peri_type #[doc =
+        "RNG peripheral singleton"] RNG <= RNG() (unstable)), (@ peri_type #[doc =
+        "LPWR peripheral singleton"] LPWR <= RTC_CNTL() (unstable)), (@ peri_type #[doc =
+        "MODEM_CLKRST peripheral singleton"] MODEM_CLKRST <= MODEM_CLKRST() (unstable)),
+        (@ peri_type #[doc = "SENSITIVE peripheral singleton"] SENSITIVE <= SENSITIVE()
+        (unstable)), (@ peri_type #[doc = "SHA peripheral singleton"] SHA <= SHA(SHA : {
+        bind_peri_interrupt, enable_peri_interrupt, disable_peri_interrupt })
+        (unstable)), (@ peri_type #[doc = "SPI0 peripheral singleton"] SPI0 <= SPI0()
+        (unstable)), (@ peri_type #[doc = "SPI1 peripheral singleton"] SPI1 <= SPI1()
+        (unstable)), (@ peri_type #[doc = "SPI2 peripheral singleton"] SPI2 <= SPI2(SPI2
+        : { bind_peri_interrupt, enable_peri_interrupt, disable_peri_interrupt })), (@
+        peri_type #[doc = "SYSTEM peripheral singleton"] SYSTEM <= SYSTEM() (unstable)),
+        (@ peri_type #[doc = "SYSTIMER peripheral singleton"] SYSTIMER <= SYSTIMER()
+        (unstable)), (@ peri_type #[doc = "TIMG0 peripheral singleton"] TIMG0 <= TIMG0()
+        (unstable)), (@ peri_type #[doc = "UART0 peripheral singleton"] UART0 <=
+        UART0(UART0 : { bind_peri_interrupt, enable_peri_interrupt,
+        disable_peri_interrupt })), (@ peri_type #[doc = "UART1 peripheral singleton"]
+        UART1 <= UART1(UART1 : { bind_peri_interrupt, enable_peri_interrupt,
+        disable_peri_interrupt })), (@ peri_type #[doc = "XTS_AES peripheral singleton"]
+        XTS_AES <= XTS_AES() (unstable)), (@ peri_type #[doc =
+        "DMA_CH0 peripheral singleton"] DMA_CH0 <= virtual() (unstable)), (@ peri_type
+        #[doc = "ADC1 peripheral singleton"] ADC1 <= virtual() (unstable)), (@ peri_type
+        #[doc = "BT peripheral singleton"] BT <= virtual(LP_TIMER : {
+        bind_lp_timer_interrupt, enable_lp_timer_interrupt, disable_lp_timer_interrupt },
+        BT_MAC : { bind_mac_interrupt, enable_mac_interrupt, disable_mac_interrupt })
+        (unstable)), (@ peri_type #[doc = "FLASH peripheral singleton"] FLASH <=
+        virtual() (unstable)), (@ peri_type #[doc =
+        "GPIO_DEDICATED peripheral singleton"] GPIO_DEDICATED <= virtual() (unstable)),
+        (@ peri_type #[doc = "SW_INTERRUPT peripheral singleton"] SW_INTERRUPT <=
+        virtual() (unstable)), (@ peri_type #[doc = "WIFI peripheral singleton"] WIFI <=
+        virtual(WIFI_MAC : { bind_mac_interrupt, enable_mac_interrupt,
+        disable_mac_interrupt }, WIFI_PWR : { bind_pwr_interrupt, enable_pwr_interrupt,
+        disable_pwr_interrupt }) (unstable))));
+        _for_each_inner_peripheral!((singletons(GPIO0), (GPIO1), (GPIO2), (GPIO3),
+        (GPIO4), (GPIO5), (GPIO6), (GPIO7), (GPIO8), (GPIO9), (GPIO10), (GPIO11),
+        (GPIO12), (GPIO13), (GPIO14), (GPIO15), (GPIO16), (GPIO17), (GPIO18), (GPIO19),
+        (GPIO20), (APB_CTRL(unstable)), (APB_SARADC(unstable)), (BB(unstable)),
+        (ASSIST_DEBUG(unstable)), (DMA(unstable)), (ECC(unstable)), (EXTMEM(unstable)),
+        (GPIO(unstable)), (I2C_ANA_MST(unstable)), (I2C0), (INTERRUPT_CORE0(unstable)),
+        (IO_MUX(unstable)), (LEDC(unstable)), (RNG(unstable)), (LPWR(unstable)),
+        (MODEM_CLKRST(unstable)), (SENSITIVE(unstable)), (SHA(unstable)),
+        (SPI0(unstable)), (SPI1(unstable)), (SPI2), (SYSTEM(unstable)),
+        (SYSTIMER(unstable)), (TIMG0(unstable)), (UART0), (UART1), (XTS_AES(unstable)),
+        (DMA_CH0(unstable)), (ADC1(unstable)), (BT(unstable)), (FLASH(unstable)),
+        (GPIO_DEDICATED(unstable)), (SW_INTERRUPT(unstable)), (WIFI(unstable))));
+        _for_each_inner_peripheral!((dma_eligible(SPI2, Spi2, 0), (SHA, Sha, 7)));
     };
 }
 /// This macro can be used to generate code for each `GPIOn` instance.
@@ -2009,41 +2937,44 @@ macro_rules! for_each_peripheral {
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_gpio {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((0, GPIO0() () ([Input] [Output]))); _for_each_inner!((1,
-        GPIO1() () ([Input] [Output]))); _for_each_inner!((2, GPIO2(_2 => FSPIQ) (_2 =>
-        FSPIQ) ([Input] [Output]))); _for_each_inner!((3, GPIO3() () ([Input]
-        [Output]))); _for_each_inner!((4, GPIO4(_0 => MTMS _2 => FSPIHD) (_2 => FSPIHD)
-        ([Input] [Output]))); _for_each_inner!((5, GPIO5(_0 => MTDI _2 => FSPIWP) (_2 =>
-        FSPIWP) ([Input] [Output]))); _for_each_inner!((6, GPIO6(_0 => MTCK _2 =>
-        FSPICLK) (_2 => FSPICLK) ([Input] [Output]))); _for_each_inner!((7, GPIO7(_2 =>
-        FSPID) (_0 => MTDO _2 => FSPID) ([Input] [Output]))); _for_each_inner!((8,
-        GPIO8() () ([Input] [Output]))); _for_each_inner!((9, GPIO9() () ([Input]
-        [Output]))); _for_each_inner!((10, GPIO10(_2 => FSPICS0) (_2 => FSPICS0) ([Input]
-        [Output]))); _for_each_inner!((11, GPIO11(_0 => SPIHD) (_0 => SPIHD) ([Input]
-        [Output]))); _for_each_inner!((12, GPIO12(_0 => SPIHD) (_0 => SPIHD) ([Input]
-        [Output]))); _for_each_inner!((13, GPIO13(_0 => SPIWP) (_0 => SPIWP) ([Input]
-        [Output]))); _for_each_inner!((14, GPIO14() (_0 => SPICS0) ([Input] [Output])));
-        _for_each_inner!((15, GPIO15() (_0 => SPICLK) ([Input] [Output])));
-        _for_each_inner!((16, GPIO16(_0 => SPID) (_0 => SPID) ([Input] [Output])));
-        _for_each_inner!((17, GPIO17(_0 => SPIQ) (_0 => SPIQ) ([Input] [Output])));
-        _for_each_inner!((18, GPIO18() () ([Input] [Output]))); _for_each_inner!((19,
-        GPIO19(_0 => U0RXD) () ([Input] [Output]))); _for_each_inner!((20, GPIO20() (_0
-        => U0TXD) ([Input] [Output]))); _for_each_inner!((all(0, GPIO0() () ([Input]
-        [Output])), (1, GPIO1() () ([Input] [Output])), (2, GPIO2(_2 => FSPIQ) (_2 =>
-        FSPIQ) ([Input] [Output])), (3, GPIO3() () ([Input] [Output])), (4, GPIO4(_0 =>
-        MTMS _2 => FSPIHD) (_2 => FSPIHD) ([Input] [Output])), (5, GPIO5(_0 => MTDI _2 =>
-        FSPIWP) (_2 => FSPIWP) ([Input] [Output])), (6, GPIO6(_0 => MTCK _2 => FSPICLK)
-        (_2 => FSPICLK) ([Input] [Output])), (7, GPIO7(_2 => FSPID) (_0 => MTDO _2 =>
-        FSPID) ([Input] [Output])), (8, GPIO8() () ([Input] [Output])), (9, GPIO9() ()
-        ([Input] [Output])), (10, GPIO10(_2 => FSPICS0) (_2 => FSPICS0) ([Input]
-        [Output])), (11, GPIO11(_0 => SPIHD) (_0 => SPIHD) ([Input] [Output])), (12,
-        GPIO12(_0 => SPIHD) (_0 => SPIHD) ([Input] [Output])), (13, GPIO13(_0 => SPIWP)
-        (_0 => SPIWP) ([Input] [Output])), (14, GPIO14() (_0 => SPICS0) ([Input]
-        [Output])), (15, GPIO15() (_0 => SPICLK) ([Input] [Output])), (16, GPIO16(_0 =>
-        SPID) (_0 => SPID) ([Input] [Output])), (17, GPIO17(_0 => SPIQ) (_0 => SPIQ)
-        ([Input] [Output])), (18, GPIO18() () ([Input] [Output])), (19, GPIO19(_0 =>
-        U0RXD) () ([Input] [Output])), (20, GPIO20() (_0 => U0TXD) ([Input] [Output]))));
+        macro_rules! _for_each_inner_gpio { $(($pattern) => $code;)* ($other : tt) => {}
+        } _for_each_inner_gpio!((0, GPIO0() () ([Input] [Output])));
+        _for_each_inner_gpio!((1, GPIO1() () ([Input] [Output])));
+        _for_each_inner_gpio!((2, GPIO2(_2 => FSPIQ) (_2 => FSPIQ) ([Input] [Output])));
+        _for_each_inner_gpio!((3, GPIO3() () ([Input] [Output])));
+        _for_each_inner_gpio!((4, GPIO4(_0 => MTMS _2 => FSPIHD) (_2 => FSPIHD) ([Input]
+        [Output]))); _for_each_inner_gpio!((5, GPIO5(_0 => MTDI _2 => FSPIWP) (_2 =>
+        FSPIWP) ([Input] [Output]))); _for_each_inner_gpio!((6, GPIO6(_0 => MTCK _2 =>
+        FSPICLK) (_2 => FSPICLK) ([Input] [Output]))); _for_each_inner_gpio!((7, GPIO7(_2
+        => FSPID) (_0 => MTDO _2 => FSPID) ([Input] [Output])));
+        _for_each_inner_gpio!((8, GPIO8() () ([Input] [Output])));
+        _for_each_inner_gpio!((9, GPIO9() () ([Input] [Output])));
+        _for_each_inner_gpio!((10, GPIO10(_2 => FSPICS0) (_2 => FSPICS0) ([Input]
+        [Output]))); _for_each_inner_gpio!((11, GPIO11(_0 => SPIHD) (_0 => SPIHD)
+        ([Input] [Output]))); _for_each_inner_gpio!((12, GPIO12(_0 => SPIHD) (_0 =>
+        SPIHD) ([Input] [Output]))); _for_each_inner_gpio!((13, GPIO13(_0 => SPIWP) (_0
+        => SPIWP) ([Input] [Output]))); _for_each_inner_gpio!((14, GPIO14() (_0 =>
+        SPICS0) ([Input] [Output]))); _for_each_inner_gpio!((15, GPIO15() (_0 => SPICLK)
+        ([Input] [Output]))); _for_each_inner_gpio!((16, GPIO16(_0 => SPID) (_0 => SPID)
+        ([Input] [Output]))); _for_each_inner_gpio!((17, GPIO17(_0 => SPIQ) (_0 => SPIQ)
+        ([Input] [Output]))); _for_each_inner_gpio!((18, GPIO18() () ([Input]
+        [Output]))); _for_each_inner_gpio!((19, GPIO19(_0 => U0RXD) () ([Input]
+        [Output]))); _for_each_inner_gpio!((20, GPIO20() (_0 => U0TXD) ([Input]
+        [Output]))); _for_each_inner_gpio!((all(0, GPIO0() () ([Input] [Output])), (1,
+        GPIO1() () ([Input] [Output])), (2, GPIO2(_2 => FSPIQ) (_2 => FSPIQ) ([Input]
+        [Output])), (3, GPIO3() () ([Input] [Output])), (4, GPIO4(_0 => MTMS _2 =>
+        FSPIHD) (_2 => FSPIHD) ([Input] [Output])), (5, GPIO5(_0 => MTDI _2 => FSPIWP)
+        (_2 => FSPIWP) ([Input] [Output])), (6, GPIO6(_0 => MTCK _2 => FSPICLK) (_2 =>
+        FSPICLK) ([Input] [Output])), (7, GPIO7(_2 => FSPID) (_0 => MTDO _2 => FSPID)
+        ([Input] [Output])), (8, GPIO8() () ([Input] [Output])), (9, GPIO9() () ([Input]
+        [Output])), (10, GPIO10(_2 => FSPICS0) (_2 => FSPICS0) ([Input] [Output])), (11,
+        GPIO11(_0 => SPIHD) (_0 => SPIHD) ([Input] [Output])), (12, GPIO12(_0 => SPIHD)
+        (_0 => SPIHD) ([Input] [Output])), (13, GPIO13(_0 => SPIWP) (_0 => SPIWP)
+        ([Input] [Output])), (14, GPIO14() (_0 => SPICS0) ([Input] [Output])), (15,
+        GPIO15() (_0 => SPICLK) ([Input] [Output])), (16, GPIO16(_0 => SPID) (_0 => SPID)
+        ([Input] [Output])), (17, GPIO17(_0 => SPIQ) (_0 => SPIQ) ([Input] [Output])),
+        (18, GPIO18() () ([Input] [Output])), (19, GPIO19(_0 => U0RXD) () ([Input]
+        [Output])), (20, GPIO20() (_0 => U0TXD) ([Input] [Output]))));
     };
 }
 /// This macro can be used to generate code for each analog function of each GPIO.
@@ -2076,19 +3007,22 @@ macro_rules! for_each_gpio {
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_analog_function {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((ADC1_CH0, GPIO0)); _for_each_inner!((ADC1_CH1, GPIO1));
-        _for_each_inner!((ADC1_CH2, GPIO2)); _for_each_inner!((ADC1_CH3, GPIO3));
-        _for_each_inner!((ADC1_CH4, GPIO4)); _for_each_inner!(((ADC1_CH0, ADCn_CHm, 1,
-        0), GPIO0)); _for_each_inner!(((ADC1_CH1, ADCn_CHm, 1, 1), GPIO1));
-        _for_each_inner!(((ADC1_CH2, ADCn_CHm, 1, 2), GPIO2));
-        _for_each_inner!(((ADC1_CH3, ADCn_CHm, 1, 3), GPIO3));
-        _for_each_inner!(((ADC1_CH4, ADCn_CHm, 1, 4), GPIO4));
-        _for_each_inner!((all(ADC1_CH0, GPIO0), (ADC1_CH1, GPIO1), (ADC1_CH2, GPIO2),
-        (ADC1_CH3, GPIO3), (ADC1_CH4, GPIO4))); _for_each_inner!((all_expanded((ADC1_CH0,
-        ADCn_CHm, 1, 0), GPIO0), ((ADC1_CH1, ADCn_CHm, 1, 1), GPIO1), ((ADC1_CH2,
-        ADCn_CHm, 1, 2), GPIO2), ((ADC1_CH3, ADCn_CHm, 1, 3), GPIO3), ((ADC1_CH4,
-        ADCn_CHm, 1, 4), GPIO4)));
+        macro_rules! _for_each_inner_analog_function { $(($pattern) => $code;)* ($other :
+        tt) => {} } _for_each_inner_analog_function!((ADC1_CH0, GPIO0));
+        _for_each_inner_analog_function!((ADC1_CH1, GPIO1));
+        _for_each_inner_analog_function!((ADC1_CH2, GPIO2));
+        _for_each_inner_analog_function!((ADC1_CH3, GPIO3));
+        _for_each_inner_analog_function!((ADC1_CH4, GPIO4));
+        _for_each_inner_analog_function!(((ADC1_CH0, ADCn_CHm, 1, 0), GPIO0));
+        _for_each_inner_analog_function!(((ADC1_CH1, ADCn_CHm, 1, 1), GPIO1));
+        _for_each_inner_analog_function!(((ADC1_CH2, ADCn_CHm, 1, 2), GPIO2));
+        _for_each_inner_analog_function!(((ADC1_CH3, ADCn_CHm, 1, 3), GPIO3));
+        _for_each_inner_analog_function!(((ADC1_CH4, ADCn_CHm, 1, 4), GPIO4));
+        _for_each_inner_analog_function!((all(ADC1_CH0, GPIO0), (ADC1_CH1, GPIO1),
+        (ADC1_CH2, GPIO2), (ADC1_CH3, GPIO3), (ADC1_CH4, GPIO4)));
+        _for_each_inner_analog_function!((all_expanded((ADC1_CH0, ADCn_CHm, 1, 0),
+        GPIO0), ((ADC1_CH1, ADCn_CHm, 1, 1), GPIO1), ((ADC1_CH2, ADCn_CHm, 1, 2), GPIO2),
+        ((ADC1_CH3, ADCn_CHm, 1, 3), GPIO3), ((ADC1_CH4, ADCn_CHm, 1, 4), GPIO4)));
     };
 }
 /// This macro can be used to generate code for each LP/RTC function of each GPIO.
@@ -2121,22 +3055,25 @@ macro_rules! for_each_analog_function {
 #[cfg_attr(docsrs, doc(cfg(feature = "_device-selected")))]
 macro_rules! for_each_lp_function {
     ($($pattern:tt => $code:tt;)*) => {
-        macro_rules! _for_each_inner { $(($pattern) => $code;)* ($other : tt) => {} }
-        _for_each_inner!((RTC_GPIO0, GPIO0)); _for_each_inner!((RTC_GPIO1, GPIO1));
-        _for_each_inner!((RTC_GPIO2, GPIO2)); _for_each_inner!((RTC_GPIO3, GPIO3));
-        _for_each_inner!((RTC_GPIO4, GPIO4)); _for_each_inner!((RTC_GPIO5, GPIO5));
-        _for_each_inner!(((RTC_GPIO0, RTC_GPIOn, 0), GPIO0));
-        _for_each_inner!(((RTC_GPIO1, RTC_GPIOn, 1), GPIO1));
-        _for_each_inner!(((RTC_GPIO2, RTC_GPIOn, 2), GPIO2));
-        _for_each_inner!(((RTC_GPIO3, RTC_GPIOn, 3), GPIO3));
-        _for_each_inner!(((RTC_GPIO4, RTC_GPIOn, 4), GPIO4));
-        _for_each_inner!(((RTC_GPIO5, RTC_GPIOn, 5), GPIO5));
-        _for_each_inner!((all(RTC_GPIO0, GPIO0), (RTC_GPIO1, GPIO1), (RTC_GPIO2, GPIO2),
-        (RTC_GPIO3, GPIO3), (RTC_GPIO4, GPIO4), (RTC_GPIO5, GPIO5)));
-        _for_each_inner!((all_expanded((RTC_GPIO0, RTC_GPIOn, 0), GPIO0), ((RTC_GPIO1,
-        RTC_GPIOn, 1), GPIO1), ((RTC_GPIO2, RTC_GPIOn, 2), GPIO2), ((RTC_GPIO3,
-        RTC_GPIOn, 3), GPIO3), ((RTC_GPIO4, RTC_GPIOn, 4), GPIO4), ((RTC_GPIO5,
-        RTC_GPIOn, 5), GPIO5)));
+        macro_rules! _for_each_inner_lp_function { $(($pattern) => $code;)* ($other : tt)
+        => {} } _for_each_inner_lp_function!((RTC_GPIO0, GPIO0));
+        _for_each_inner_lp_function!((RTC_GPIO1, GPIO1));
+        _for_each_inner_lp_function!((RTC_GPIO2, GPIO2));
+        _for_each_inner_lp_function!((RTC_GPIO3, GPIO3));
+        _for_each_inner_lp_function!((RTC_GPIO4, GPIO4));
+        _for_each_inner_lp_function!((RTC_GPIO5, GPIO5));
+        _for_each_inner_lp_function!(((RTC_GPIO0, RTC_GPIOn, 0), GPIO0));
+        _for_each_inner_lp_function!(((RTC_GPIO1, RTC_GPIOn, 1), GPIO1));
+        _for_each_inner_lp_function!(((RTC_GPIO2, RTC_GPIOn, 2), GPIO2));
+        _for_each_inner_lp_function!(((RTC_GPIO3, RTC_GPIOn, 3), GPIO3));
+        _for_each_inner_lp_function!(((RTC_GPIO4, RTC_GPIOn, 4), GPIO4));
+        _for_each_inner_lp_function!(((RTC_GPIO5, RTC_GPIOn, 5), GPIO5));
+        _for_each_inner_lp_function!((all(RTC_GPIO0, GPIO0), (RTC_GPIO1, GPIO1),
+        (RTC_GPIO2, GPIO2), (RTC_GPIO3, GPIO3), (RTC_GPIO4, GPIO4), (RTC_GPIO5, GPIO5)));
+        _for_each_inner_lp_function!((all_expanded((RTC_GPIO0, RTC_GPIOn, 0), GPIO0),
+        ((RTC_GPIO1, RTC_GPIOn, 1), GPIO1), ((RTC_GPIO2, RTC_GPIOn, 2), GPIO2),
+        ((RTC_GPIO3, RTC_GPIOn, 3), GPIO3), ((RTC_GPIO4, RTC_GPIOn, 4), GPIO4),
+        ((RTC_GPIO5, RTC_GPIOn, 5), GPIO5)));
     };
 }
 /// Defines the `InputSignal` and `OutputSignal` enums.

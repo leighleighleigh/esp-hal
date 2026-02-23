@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `handler` macro no longer generates code to check the Priority (#4996)
 
 ### Fixed
 - Fixed the logic for determining which sections should be loaded in `load_lp_code!` macro (#4612)
@@ -54,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Using the `#handler` macro with a priority of `None` will fail at compile time (#3304)
+- Using the `#[handler]` macro with a priority of `None` will fail at compile time (#3304)
 - Bump Rust edition to 2024, bump MSRV to 1.86. (#3391, #3560)
 
 ## [0.17.0] - 2025-02-24

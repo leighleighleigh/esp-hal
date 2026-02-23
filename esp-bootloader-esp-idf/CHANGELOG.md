@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `OtaUpdater::ota_data()` (#4413)
+- Initial ESP32-C5 support (#4859)
 
 ### Changed
 
 - `Ota::new()` now takes `FlashRegion` by value (#4413)
+- The section of `ESP_APP_DESC` has been changed to `.flash.appdesc` to align with the behavior of esptool (#4745)
 
 ### Fixed
 

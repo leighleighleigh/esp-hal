@@ -11,7 +11,7 @@ pub use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use strum::IntoEnumIterator;
 
-use crate::cfg::{SupportItem, SupportStatus, Value};
+use crate::cfg::{PinLimitation, SupportItem, SupportStatus, Value};
 
 macro_rules! include_toml {
     (Config, $file:expr) => {{
@@ -110,6 +110,8 @@ pub enum Chip {
     Esp32c2,
     /// ESP32-C3, ESP8685
     Esp32c3,
+    /// ESP32-C5
+    Esp32c5,
     /// ESP32-C6
     Esp32c6,
     /// ESP32-H2
@@ -153,13 +155,13 @@ impl Chip {
 
     pub fn has_lp_core(&self) -> bool {
         use Chip::*;
-
+        // TODO this should be checking for lp_core_driver_supported
         matches!(self, Esp32c6 | Esp32s2 | Esp32s3)
     }
 
     pub fn lp_target(&self) -> Result<&'static str> {
         match self {
-            Chip::Esp32c6 => Ok("riscv32imac-unknown-none-elf"),
+            Chip::Esp32c5 | Chip::Esp32c6 => Ok("riscv32imac-unknown-none-elf"),
             Chip::Esp32s2 | Chip::Esp32s3 => Ok("riscv32imc-unknown-none-elf"),
             _ => bail!("Chip does not contain an LP core: '{self}'"),
         }
@@ -170,6 +172,7 @@ impl Chip {
             Chip::Esp32 => "Esp32",
             Chip::Esp32c2 => "Esp32c2",
             Chip::Esp32c3 => "Esp32c3",
+            Chip::Esp32c5 => "Esp32c5",
             Chip::Esp32c6 => "Esp32c6",
             Chip::Esp32h2 => "Esp32h2",
             Chip::Esp32s2 => "Esp32s2",
@@ -182,6 +185,7 @@ impl Chip {
             Chip::Esp32 => "ESP32",
             Chip::Esp32c2 => "ESP32-C2",
             Chip::Esp32c3 => "ESP32-C3",
+            Chip::Esp32c5 => "ESP32-C5",
             Chip::Esp32c6 => "ESP32-C6",
             Chip::Esp32h2 => "ESP32-H2",
             Chip::Esp32s2 => "ESP32-S2",
@@ -197,6 +201,39 @@ impl Chip {
         !self.is_xtensa()
     }
 
+    pub fn list_of_possible_symbols() -> &'static IndexMap<String, Option<Vec<String>>> {
+        type SymbolMap = IndexMap<String, Option<Vec<String>>>;
+        static CACHED_SYMBOLS: OnceLock<SymbolMap> = OnceLock::new();
+        CACHED_SYMBOLS.get_or_init(|| {
+            let mut cfgs: SymbolMap = SymbolMap::new();
+
+            for chip in Chip::iter() {
+                let config = Config::for_chip(&chip);
+                for symbol in config.all() {
+                    if let Some((symbol_name, symbol_value)) = symbol.split_once('=') {
+                        let symbol_name = symbol_name.replace('.', "_");
+                        let entry = cfgs.entry(symbol_name).or_default();
+                        let vec = entry.get_or_insert_with(Vec::new);
+
+                        // Avoid duplicates in the same cfg.
+                        if !vec.contains(&symbol_value.to_string()) {
+                            vec.push(symbol_value.to_string());
+                        }
+                    } else {
+                        // https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-check-cfg
+                        let cfg = symbol.replace('.', "_");
+
+                        if !cfgs.contains_key(&cfg) {
+                            cfgs.insert(cfg, None);
+                        }
+                    }
+                }
+            }
+
+            cfgs
+        })
+    }
+
     pub fn list_of_check_cfgs() -> Vec<String> {
         let mut cfgs = vec![];
 
@@ -204,37 +241,20 @@ impl Chip {
         cfgs.push(String::from("cargo:rustc-check-cfg=cfg(not_really_docsrs)"));
         cfgs.push(String::from("cargo:rustc-check-cfg=cfg(semver_checks)"));
 
-        let mut cfg_values: IndexMap<String, Vec<String>> = IndexMap::new();
-
-        for chip in Chip::iter() {
-            let config = Config::for_chip(&chip);
-            for symbol in config.all() {
-                if let Some((symbol_name, symbol_value)) = symbol.split_once('=') {
-                    // cfg's with values need special syntax, so let's collect all
-                    // of them separately.
-                    let symbol_name = symbol_name.replace('.', "_");
-                    let entry = cfg_values.entry(symbol_name).or_default();
-                    // Avoid duplicates in the same cfg.
-                    if !entry.contains(&symbol_value.to_string()) {
-                        entry.push(symbol_value.to_string());
-                    }
-                } else {
-                    // https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-check-cfg
-                    let cfg = format!("cargo:rustc-check-cfg=cfg({})", symbol.replace('.', "_"));
-
-                    if !cfgs.contains(&cfg) {
-                        cfgs.push(cfg);
-                    }
-                }
+        let possible_symbols = Self::list_of_possible_symbols();
+        for (sym, values) in possible_symbols.iter() {
+            if values.is_none() {
+                cfgs.push(format!("cargo:rustc-check-cfg=cfg({})", sym));
             }
         }
 
-        // Now output all cfgs with values.
-        for (symbol_name, symbol_values) in cfg_values {
-            cfgs.push(format!(
-                "cargo:rustc-check-cfg=cfg({symbol_name}, values({}))",
-                symbol_values.join(",")
-            ));
+        for (sym, values) in possible_symbols.iter() {
+            if let Some(values) = values {
+                cfgs.push(format!(
+                    "cargo:rustc-check-cfg=cfg({sym}, values({}))",
+                    values.join(",")
+                ));
+            }
         }
 
         cfgs
@@ -261,6 +281,12 @@ pub struct PeripheralDef {
     /// List of related interrupt signals
     #[serde(default)]
     interrupts: IndexMap<String, String>,
+    /// If the peripheral is DMA eligible, this defines the peripheral selector value.
+    #[serde(default)]
+    dma_peripheral: Option<u32>,
+    /// Set to true to hide a peripheral from the Peripherals struct.
+    #[serde(default)]
+    hidden: bool,
 }
 
 impl PeripheralDef {
@@ -309,6 +335,7 @@ impl Config {
             Chip::Esp32 => include_toml!(Config, "../devices/esp32.toml"),
             Chip::Esp32c2 => include_toml!(Config, "../devices/esp32c2.toml"),
             Chip::Esp32c3 => include_toml!(Config, "../devices/esp32c3.toml"),
+            Chip::Esp32c5 => include_toml!(Config, "../devices/esp32c5.toml"),
             Chip::Esp32c6 => include_toml!(Config, "../devices/esp32c6.toml"),
             Chip::Esp32h2 => include_toml!(Config, "../devices/esp32h2.toml"),
             Chip::Esp32s2 => include_toml!(Config, "../devices/esp32s2.toml"),
@@ -395,7 +422,7 @@ impl Config {
                 self.device
                     .peri_config
                     .driver_names()
-                    .map(|name| name.to_string()),
+                    .map(|name| format!("{name}_driver_supported")),
             );
             all.extend(self.device.peri_config.driver_instances());
 
@@ -565,10 +592,9 @@ impl Config {
     }
 
     fn generate_peripherals_macro(&self) -> TokenStream {
-        let mut stable = vec![];
-        let mut unstable = vec![];
         let mut all_peripherals = vec![];
         let mut singleton_peripherals = vec![];
+        let mut dma_peripherals = vec![];
 
         let mut stable_peris = vec![];
 
@@ -587,14 +613,53 @@ impl Config {
         if let Some(gpio) = self.device.peri_config.gpio.as_ref() {
             for gpio in gpio.pins_and_signals.pins.iter() {
                 let pin = format_ident!("GPIO{}", gpio.pin);
+                let mut docs = format!("GPIO{} peripheral singleton", gpio.pin);
+
+                let mut limitations = gpio.limitations.clone();
+
+                // Resolve implicit limitations - based on pin alternate functions
+                let implicit: &[(&[&str], PinLimitation)] = &[
+                    (&["MTMS", "MTCK", "MTDO", "MTDI"], PinLimitation::Jtag),
+                    (&["USB_DP", "USB_DM"], PinLimitation::UsbJtag),
+                    (&["U0TXD", "U0RXD"], PinLimitation::BootloaderUart),
+                ];
+
+                for i in 0..6 {
+                    if let Some(func) = gpio.functions.get(i) {
+                        for (pins, limitation) in implicit.iter() {
+                            if pins.contains(&func) {
+                                limitations.push(*limitation);
+                            }
+                        }
+                    }
+                }
+
+                if !limitations.is_empty() {
+                    // Append a marker and an explanation to the short description
+                    let limitations = limitations
+                        .iter()
+                        .map(|limitation| format!("<li>{}</li>", limitation))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    write!(
+                        &mut docs,
+                        r#" (Limitations exist)
+
+<section class="warning">
+This pin may be available with certain limitations. Check your hardware to make sure whether you can use it.
+<ul>
+{limitations}
+</ul>
+</section>"#,
+                    )
+                    .unwrap();
+                }
+                let docs = docs.lines();
                 let tokens = quote! {
-                    #pin <= virtual ()
+                    #(#[doc = #docs])* #pin <= virtual ()
                 };
                 all_peripherals.push(quote! { @peri_type #tokens });
-                if !gpio.limited {
-                    singleton_peripherals.push(quote! { #pin });
-                }
-                stable.push(tokens);
+                singleton_peripherals.push(quote! { #pin });
             }
         }
 
@@ -615,28 +680,58 @@ impl Config {
                 let disable = format_ident!("disable_{k}_interrupt");
                 quote! { #pac_interrupt_name: { #bind, #enable, #disable } }
             });
+            let singleton_doc = format!("{} peripheral singleton", peri.name);
             let tokens = quote! {
-                #hal <= #pac ( #(#interrupts),* )
+                #[doc = #singleton_doc] #hal <= #pac ( #(#interrupts),* )
             };
             if stable_peris
                 .iter()
                 .any(|p| peri.name.eq_ignore_ascii_case(p))
             {
                 all_peripherals.push(quote! { @peri_type #tokens });
-                singleton_peripherals.push(quote! { #hal });
-                stable.push(tokens);
+                if !peri.hidden {
+                    singleton_peripherals.push(quote! { #hal });
+                }
             } else {
                 all_peripherals.push(quote! { @peri_type #tokens (unstable) });
-                singleton_peripherals.push(quote! { #hal (unstable) });
-                unstable.push(tokens);
+                if !peri.hidden {
+                    singleton_peripherals.push(quote! { #hal (unstable) });
+                }
+            }
+
+            if let Some(dma_peripheral) = peri.dma_peripheral {
+                dma_peripherals.push((peri.name.as_str(), dma_peripheral));
             }
         }
+
+        dma_peripherals.sort_by_key(|(_, dma_peripheral)| *dma_peripheral);
+
+        let dma_peripherals = dma_peripherals
+            .into_iter()
+            .map(|(name, dma_peripheral)| {
+                use convert_case::{Boundary, Case, Casing, pattern};
+
+                let peri = format_ident!("{}", name);
+                let dma_peripheral = number(dma_peripheral);
+                let variant_name = format_ident!(
+                    "{}",
+                    name.from_case(Case::Custom {
+                        boundaries: &[Boundary::LOWER_UPPER, Boundary::UNDERSCORE],
+                        pattern: pattern::capital,
+                        delim: "",
+                    })
+                    .to_case(Case::Pascal)
+                );
+                quote! { #peri, #variant_name, #dma_peripheral }
+            })
+            .collect::<Vec<_>>();
 
         generate_for_each_macro(
             "peripheral",
             &[
                 ("all", &all_peripherals),
                 ("singletons", &singleton_peripherals),
+                ("dma_eligible", &dma_peripherals),
             ],
         )
     }
@@ -669,6 +764,7 @@ fn generate_for_each_macro(name: &str, branches: &[Branch<'_>]) -> TokenStream {
     let flat_branches = branches.iter().flat_map(|b| b.1.iter());
     let repeat_names = branches.iter().map(|b| TokenStream::from_str(b.0).unwrap());
     let repeat_branches = branches.iter().map(|b| b.1);
+    let inner = format_ident!("_for_each_inner_{name}");
 
     quote! {
         // This macro is called in esp-hal to implement a driver's
@@ -680,7 +776,7 @@ fn generate_for_each_macro(name: &str, branches: &[Branch<'_>]) -> TokenStream {
             (
                 $($pattern:tt => $code:tt;)*
             ) => {
-                macro_rules! _for_each_inner {
+                macro_rules! #inner {
                     $(($pattern) => $code;)*
                     ($other:tt) => {}
                 }
@@ -694,7 +790,7 @@ fn generate_for_each_macro(name: &str, branches: &[Branch<'_>]) -> TokenStream {
                 //     }
                 // }
                 // ```
-                #(_for_each_inner!(( #flat_branches ));)*
+                #( #inner!(( #flat_branches ));)*
 
                 // Generate a single macro call with all branches.
                 // Usage:
@@ -705,7 +801,7 @@ fn generate_for_each_macro(name: &str, branches: &[Branch<'_>]) -> TokenStream {
                 //     }
                 // }
                 // ```
-                #( _for_each_inner!( (#repeat_names #( (#repeat_branches) ),*) ); )*
+                #(  #inner!( (#repeat_names #( (#repeat_branches) ),*) ); )*
             };
         }
     }
@@ -739,6 +835,34 @@ pub fn generate_build_script_utils() -> TokenStream {
                 })
             }
         });
+        let pins = config
+            .device
+            .peri_config
+            .gpio
+            .as_ref()
+            .map(|gpio| {
+                gpio.pins_and_signals
+                    .pins
+                    .iter()
+                    .map(|pin| {
+                        let num = number(pin.pin);
+                        let limitations = pin.limitations.iter().map(|limitation| {
+                            TokenStream::from_str(
+                                &basic_toml::to_string(&limitation)
+                                    .expect("Serializing limitations should be infallible"),
+                            )
+                            .expect("Valid TOML string can be re-parsed as Rust strings")
+                        });
+                        quote! {
+                            PinInfo {
+                                pin: #num,
+                                limitations: &[#(#limitations,)*],
+                            }
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         quote! {
             Config {
                 architecture: #arch,
@@ -754,6 +878,9 @@ pub fn generate_build_script_utils() -> TokenStream {
                         #(#memory_regions,)*
                     ],
                 },
+                pins: &[
+                    #(#pins,)*
+                ]
             }
         }
     });
@@ -775,6 +902,54 @@ pub fn generate_build_script_utils() -> TokenStream {
             ($($any:tt)*) => {};
         }
 
+        #[doc(hidden)]
+        #[macro_export]
+        macro_rules! __assert_features_logic {
+            ($op:tt, $limit:expr, $msg:literal, $($feature:literal),+ $(,)?) => {{
+                let enabled: Vec<&str> = [
+                    $( if cfg!(feature = $feature) { Some($feature) } else { None }, )+
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
+
+                assert!(
+                    enabled.len() $op $limit,
+                    concat!($msg, ": {}.\nCurrently enabled: {}. This might be caused by enabled default features.\n"),
+                    [$($feature),+].join(", "),
+                    if enabled.is_empty() {
+                        "none".to_string()
+                    } else {
+                        enabled.join(", ")
+                    }
+                );
+            }};
+        }
+
+        #[macro_export]
+        macro_rules! assert_unique_features {
+            ($($f:literal),+ $(,)?) => {
+                $crate::__assert_features_logic!(
+                    <=,
+                    1,
+                    "\nAt most one of the following features must be enabled",
+                    $($f),+
+                );
+            };
+        }
+
+        #[macro_export]
+        macro_rules! assert_unique_used_features {
+            ($($f:literal),+ $(,)?) => {
+                $crate::__assert_features_logic!(
+                    ==,
+                    1,
+                    "\nExactly one of the following features must be enabled",
+                    $($f),+
+                );
+            };
+        }
+
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         #[cfg_attr(docsrs, doc(cfg(feature = "build-script")))]
         pub enum Chip {
@@ -786,7 +961,7 @@ pub fn generate_build_script_utils() -> TokenStream {
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match s {
-                    #( #name => Ok(Self::#chip),)*
+                    #( #name => Ok(Self::#chip), )*
                     _ => Err(alloc::format!(#from_str_err)),
                 }
             }
@@ -798,10 +973,11 @@ pub fn generate_build_script_utils() -> TokenStream {
             /// Exactly one device feature must be enabled for this function to succeed.
             pub fn from_cargo_feature() -> Result<Self, &'static str> {
                 let all_chips = [
-                    #(( #feature_env, Self::#chip )),*
+                    #((#feature_env, Self::#chip)),*
                 ];
 
                 let mut chip = None;
+
                 for (env, c) in all_chips {
                     if std::env::var(env).is_ok() {
                         if chip.is_some() {
@@ -813,7 +989,7 @@ pub fn generate_build_script_utils() -> TokenStream {
 
                 match chip {
                     Some(chip) => Ok(chip),
-                    None => Err(#bail_message)
+                    None => Err(#bail_message),
                 }
             }
 
@@ -874,6 +1050,11 @@ pub fn generate_build_script_utils() -> TokenStream {
                 self.config().memory_layout
             }
 
+            /// Returns information about all pins.
+            pub fn pins(&self) -> &'static [PinInfo] {
+                self.config().pins
+            }
+
             /// Returns an iterator over all chips.
             ///
             /// ## Example
@@ -884,12 +1065,13 @@ pub fn generate_build_script_utils() -> TokenStream {
             pub fn iter() -> impl Iterator<Item = Chip> {
                 [
                     #( Self::#chip ),*
-                ].into_iter()
+                ]
+                .into_iter()
             }
 
             fn config(self) -> Config {
                 match self {
-                    #(Self::#chip => #config),*
+                    #( Self::#chip => #config ),*
                 }
             }
         }
@@ -919,8 +1101,22 @@ pub fn generate_build_script_utils() -> TokenStream {
         impl MemoryLayout {
             /// Returns the memory region with the given name.
             pub fn region(&self, name: &str) -> Option<&'static MemoryRegion> {
-                self.regions.iter().find_map(|(n, r)| if *n == name { Some(r) } else { None })
+                self.regions
+                    .iter()
+                    .find_map(|(n, r)| if *n == name { Some(r) } else { None })
             }
+        }
+
+        /// Information about a specific pin.
+        #[non_exhaustive]
+        pub struct PinInfo {
+            /// The pin number.
+            pub pin: usize,
+
+            /// The list of possible restriction categories for this pin.
+            ///
+            /// This can include "strapping", "spi_psram", etc.
+            pub limitations: &'static [&'static str],
         }
 
         struct Config {
@@ -929,6 +1125,7 @@ pub fn generate_build_script_utils() -> TokenStream {
             symbols: &'static [&'static str],
             cfgs: &'static [&'static str],
             memory_layout: &'static MemoryLayout,
+            pins: &'static [PinInfo],
         }
 
         impl Config {
@@ -942,7 +1139,7 @@ pub fn generate_build_script_utils() -> TokenStream {
 
         /// Prints `cargo:rustc-check-cfg` lines.
         pub fn emit_check_cfg_directives() {
-            #(println!(#check_cfgs);)*
+            #( println!(#check_cfgs); )*
         }
     }
 }

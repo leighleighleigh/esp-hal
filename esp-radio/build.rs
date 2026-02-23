@@ -7,18 +7,7 @@ use std::{
 };
 
 use esp_config::{Value, generate_config_from_yaml_definition};
-use esp_metadata_generated::Chip;
-
-#[macro_export]
-macro_rules! assert_unique_features {
-    ($($feature:literal),+ $(,)?) => {
-        assert!(
-            (0 $(+ cfg!(feature = $feature) as usize)+ ) <= 1,
-            "Exactly zero or one of the following features must be enabled: {}",
-            [$($feature),+].join(", ")
-        );
-    };
-}
+use esp_metadata_generated::{Chip, assert_unique_features};
 
 fn main() -> Result<(), Box<dyn Error>> {
     // if using '"rust-analyzer.cargo.buildScripts.useRustcWrapper": true' we can detect this
@@ -33,10 +22,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     chip.define_cfgs();
 
     // If some library required unstable make sure unstable is actually enabled.
-    if !suppress_panics && cfg!(feature = "requires-unstable") && !cfg!(feature = "unstable") {
-        panic!(
-            "\n\nThe `unstable` feature is required by a dependent crate but is not enabled.\n\n"
-        );
+    if !suppress_panics {
+        if cfg!(feature = "requires-unstable") && !cfg!(feature = "unstable") {
+            panic!(
+                "\n\nThe `unstable` feature is required by a dependent crate but is not enabled.\n\n"
+            );
+        }
+
+        if cfg!(feature = "__has_unstable_feature_enabled") && !cfg!(feature = "unstable") {
+            panic!(
+                "\n\nA feature flag which is considered unstable has been enabled, but the `unstable` feature is not selected.\n\n"
+            );
+        }
     }
 
     #[cfg(not(feature = "__docs_build"))]
@@ -49,14 +46,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         || cfg!(feature = "csi")
         || cfg!(feature = "esp-now")
         || cfg!(feature = "ieee802154")
-        || cfg!(feature = "smoltcp")
         || cfg!(feature = "sniffer")
         || cfg!(feature = "wifi-eap"))
         && !cfg!(feature = "unstable")
         && !suppress_panics
     {
         panic!(
-            "\n\nThe `unstable` feature was not provided, but is required for the following features: `ble`, `coex`, `csi`, `esp-now`, `ieee802154`, `smoltcp`, `sniffer`, `wifi-eap`.\n\n"
+            "\n\nThe `unstable` feature was not provided, but is required for the following features: `ble`, `coex`, `csi`, `esp-now`, `ieee802154`, `sniffer`, `wifi-eap`.\n\n"
         )
     }
 
@@ -65,7 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // implementation detail.
     assert_unique_features!("log-04", "defmt");
 
-    if cfg!(feature = "ble") && !chip.contains("bt") {
+    if cfg!(feature = "ble") && !chip.contains("soc_has_bt") {
         panic!(
             r#"
 
@@ -75,7 +71,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    if cfg!(feature = "wifi") && !chip.contains("wifi") {
+    if cfg!(feature = "wifi") && !chip.contains("soc_has_wifi") {
         panic!(
             r#"
 
@@ -85,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    if cfg!(feature = "ieee802154") && !chip.contains("ieee802154") {
+    if cfg!(feature = "ieee802154") && !chip.contains("soc_has_ieee802154") {
         panic!(
             r#"
 
@@ -111,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "coex")]
     {
         assert!(
-            chip.contains("wifi") && chip.contains("bt"),
+            chip.contains("soc_has_wifi") && chip.contains("soc_has_bt"),
             r#"
 
             Wi-Fi/Bluetooth coexistence is not supported on this target.

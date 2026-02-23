@@ -29,15 +29,12 @@ use portable_atomic::AtomicPtr;
 
 #[cfg(feature = "rtos-trace")]
 use crate::TraceEvents;
-use crate::{SCHEDULER, task::IdleFn};
+use crate::{
+    SCHEDULER,
+    task::{IdleFn, Task},
+};
 
 static IDLE_HOOK: AtomicPtr<()> = AtomicPtr::new(core::ptr::null_mut());
-
-pub(crate) extern "C" fn idle_hook() -> ! {
-    loop {
-        unsafe { core::arch::asm!("waiti 0") };
-    }
-}
 
 #[unsafe(naked)]
 extern "C" fn idle_entry() -> ! {
@@ -66,10 +63,25 @@ pub(crate) fn set_idle_hook_entry(idle_context: &mut CpuContext, hook_fn: IdleFn
 
     // Point idle context PC at the assembly that calls the idle hook. We need a new stack
     // frame for the idle task on the main stack.
-    idle_context.PC = idle_entry as usize as u32;
+    idle_context.PC = idle_entry as *const () as u32;
     // Set a valid processor status value, that will not end up spilling registers into the main
     // task's stack. Here we jump to a naked function so we can omit the CALLINC bits.
     idle_context.PS = PS_EXCM | PS_UM | PS_WOE;
+
+    // The idle context has no thread-local data
+    idle_context.THREADPTR = 0;
+}
+
+#[inline(always)]
+pub(crate) fn read_thread_pointer() -> *mut Task {
+    let tp: *mut Task;
+    unsafe { core::arch::asm!("rur.threadptr {0}", out(reg) tp, options(nostack)) };
+    tp
+}
+
+#[inline(always)]
+pub(crate) fn write_thread_pointer(task: *mut Task) {
+    unsafe { core::arch::asm!("wur.threadptr {0}", in(reg) task, options(nostack)) };
 }
 
 #[cfg(feature = "esp-radio")]
@@ -90,7 +102,7 @@ pub(crate) fn new_task_context(
     }
 
     CpuContext {
-        PC: super::task_wrapper as usize as u32,
+        PC: super::task_wrapper as *const () as u32,
         A0: 0,
         A1: stack_top,
         A6: task_fn as usize as u32,
@@ -174,19 +186,9 @@ pub(crate) fn yield_task() {
     }
 
     #[cfg(esp32)]
-    {
-        match Cpu::current() {
-            Cpu::ProCpu => unsafe { SoftwareInterrupt::<'static, 0>::steal() }.raise(),
-            Cpu::AppCpu => unsafe { SoftwareInterrupt::<'static, 1>::steal() }.raise(),
-        }
-
-        // It takes a bit for the software interrupt to be serviced.
-        unsafe {
-            core::arch::asm!("nop");
-            core::arch::asm!("nop");
-            core::arch::asm!("nop");
-            core::arch::asm!("nop");
-        }
+    match Cpu::current() {
+        Cpu::ProCpu => unsafe { SoftwareInterrupt::<'static, 0>::steal() }.raise(),
+        Cpu::AppCpu => unsafe { SoftwareInterrupt::<'static, 1>::steal() }.raise(),
     }
 }
 

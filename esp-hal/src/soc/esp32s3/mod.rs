@@ -10,9 +10,11 @@
 //!    * I2S_DEFAULT_CLK_SRC: 2 - I2S clock source
 
 crate::unstable_module! {
+    pub mod clocks;
     pub mod trng;
     pub mod ulp_core;
 }
+#[cfg(feature = "unstable")]
 pub mod cpu_control;
 pub mod gpio;
 pub(crate) mod regi2c;

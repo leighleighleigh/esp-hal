@@ -6,9 +6,10 @@
 //! for interacting with various system-related peripherals on `ESP32` chip.
 
 crate::unstable_module! {
+    pub mod clocks;
     pub mod trng;
 }
-pub mod clocks;
+#[cfg(feature = "unstable")]
 pub mod cpu_control;
 pub mod gpio;
 pub(crate) mod regi2c;

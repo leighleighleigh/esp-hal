@@ -1,4 +1,4 @@
-#[embedded_test::tests(default_timeout = 3)]
+#[embedded_test::tests(default_timeout = 3, executor = hil_test::Executor::new())]
 mod tests {
     use esp_hal::{
         clock::CpuClock,
@@ -6,7 +6,7 @@ mod tests {
         peripherals::Peripherals,
         timer::timg::TimerGroup,
     };
-    use esp_radio::wifi::scan::ScanConfig;
+    use esp_radio::wifi::{Config, scan::ScanConfig, sta::StationConfig};
 
     #[init]
     fn init() -> Peripherals {
@@ -16,11 +16,29 @@ mod tests {
         esp_hal::init(config)
     }
 
+    // C5 temporarily disabled
+    #[cfg(not(esp32c5))]
+    #[test]
+    async fn wifi_starts_with_trng_enabled(p: Peripherals) {
+        let timg0: TimerGroup<'_, _> = TimerGroup::new(p.TIMG0);
+        let sw_ints = SoftwareInterruptControl::new(p.SW_INTERRUPT);
+        esp_rtos::start(timg0.timer0, sw_ints.software_interrupt0);
+
+        let _source = esp_hal::rng::TrngSource::new(p.RNG, p.ADC1);
+
+        let (mut controller, _interfaces) =
+            esp_radio::wifi::new(p.WIFI, Default::default()).unwrap();
+
+        controller
+            .set_config(&Config::Station(StationConfig::default()))
+            .unwrap();
+    }
+
     // If this turns out to be too flaky or time-consuming,
     // we should consider converting this into a qa-test.
     #[test]
     #[timeout(15)]
-    fn test_scan_doesnt_leak(p: Peripherals) {
+    async fn test_scan_doesnt_leak(p: Peripherals) {
         let timg0: TimerGroup<'_, _> = TimerGroup::new(p.TIMG0);
         let sw_ints = SoftwareInterruptControl::new(p.SW_INTERRUPT);
         esp_rtos::start(timg0.timer0, sw_ints.software_interrupt0);
@@ -29,21 +47,21 @@ mod tests {
             esp_radio::wifi::new(p.WIFI, Default::default()).unwrap();
 
         controller
-            .set_mode(esp_radio::wifi::WifiMode::Station)
+            .set_config(&Config::Station(StationConfig::default()))
             .unwrap();
-        controller.start().unwrap();
 
-        let scan_config = ScanConfig::default().with_max(1);
-        let _res = controller.scan_with_config(scan_config).unwrap();
+        // scanning all channels takes a (too) long time - even more for dual-band capable targets
+        let scan_config = ScanConfig::default().with_max(1).with_channel(13);
+        let _ = controller.scan_async(&scan_config).await.unwrap();
 
         let mut min_free = usize::MAX;
         for _ in 0..30 {
-            let _res = controller.scan_with_config(scan_config).unwrap();
+            let _ = controller.scan_async(&scan_config).await.unwrap();
             min_free = usize::min(min_free, esp_alloc::HEAP.free());
         }
 
         for _ in 0..10 {
-            let _res = controller.scan_with_config(scan_config).unwrap();
+            let _ = controller.scan_async(&scan_config).await.unwrap();
             assert!(
                 esp_alloc::HEAP.free() >= min_free,
                 "current free: {}, min free: {}",

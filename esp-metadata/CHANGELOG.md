@@ -10,9 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Clock tree modeling (#4501)
+- Encode pin restrictions in the generated data (#4790)
+- Initial ESP32-C5 support (#4859, #4866)
+- DMA properties and peripheral selector values (#4944)
 
 ### Changed
 
+- Symbols generated from driver names are now suffixed by `_driver_supported` (#4929)
 
 ### Fixed
 

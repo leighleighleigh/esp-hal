@@ -9,23 +9,12 @@ use crate::{
     esp_wifi_result,
     sys::include,
     wifi::{
+        Ssid,
         WifiController,
         WifiError,
         ap::{AccessPointInfo, convert_ap_info},
     },
 };
-
-/// Wi-Fi scan method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-#[instability::unstable]
-pub enum ScanMethod {
-    /// Fast scan.
-    Fast,
-    /// Scan all channels.
-    AllChannels,
-}
 
 /// Configuration for active or passive scan.
 ///
@@ -35,7 +24,8 @@ pub enum ScanMethod {
 /// |--------------------------------------|------------|-------------|
 /// | **Power consumption**                |    High    |     Low     |
 /// | **Time required (typical behavior)** |     Low    |     High    |
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[non_exhaustive]
 pub enum ScanTypeConfig {
     /// Active scan with min and max scan time per channel. This is the default
@@ -61,7 +51,7 @@ pub enum ScanTypeConfig {
     /// 3. Repeat from 1.
     ///
     /// # Note
-    /// It is recommended to avoid duration longer thean 1500ms, as it may cause
+    /// It is recommended to avoid duration longer than 1500ms, as it may cause
     /// a station to disconnect from the Access Point.
     Passive(Duration),
 }
@@ -87,12 +77,13 @@ impl ScanTypeConfig {
 
 /// Scan configuration.
 #[derive(Clone, Copy, Default, PartialEq, Eq, BuilderLite)]
-pub struct ScanConfig<'a> {
+pub struct ScanConfig {
     /// SSID to filter for.
     /// If [`None`] is passed, all SSIDs will be returned.
     /// If [`Some`] is passed, only the APs matching the given SSID will be
     /// returned.
-    pub(crate) ssid: Option<&'a str>,
+    #[builder_lite(skip_setter)]
+    pub(crate) ssid: Option<Ssid>,
     /// BSSID to filter for.
     /// If [`None`] is passed, all BSSIDs will be returned.
     /// If [`Some`] is passed, only the APs matching the given BSSID will be
@@ -111,6 +102,20 @@ pub struct ScanConfig<'a> {
     /// If [`None`] is passed, all networks will be returned.
     /// If [`Some`] is passed, the specified number of networks will be returned.
     pub(crate) max: Option<usize>,
+}
+
+impl ScanConfig {
+    /// Set the SSID of the access point.
+    pub fn with_ssid(mut self, ssid: impl Into<Ssid>) -> Self {
+        self.ssid = Some(ssid.into());
+        self
+    }
+
+    /// Clears the SSID.
+    pub fn with_ssid_none(mut self) -> Self {
+        self.ssid = None;
+        self
+    }
 }
 
 /// Wi-Fi scan results.
@@ -167,7 +172,7 @@ impl Iterator for ScanResults<'_> {
 }
 
 /// AP list on-drop guard.
-pub struct FreeApListOnDrop;
+pub(super) struct FreeApListOnDrop;
 
 impl FreeApListOnDrop {
     /// Do not automatically free the AP list when the guard is dropped.

@@ -1,22 +1,26 @@
 pub(crate) mod aes;
 pub(crate) mod gpio;
 pub(crate) mod i2c_master;
+pub(crate) mod interrupt;
 pub(crate) mod rmt;
 pub(crate) mod rsa;
 pub(crate) mod sha;
 pub(crate) mod soc;
 pub(crate) mod spi_master;
 pub(crate) mod spi_slave;
+pub(crate) mod timergroup;
 pub(crate) mod uart;
 
 pub(crate) use aes::*;
 pub(crate) use gpio::*;
 pub(crate) use i2c_master::*;
+pub(crate) use interrupt::*;
 pub(crate) use rmt::*;
 pub(crate) use sha::*;
 pub(crate) use soc::*;
 pub(crate) use spi_master::*;
 pub(crate) use spi_slave::*;
+pub(crate) use timergroup::*;
 pub(crate) use uart::*;
 
 pub(crate) trait GenericProperty {
@@ -30,6 +34,22 @@ pub(crate) trait GenericProperty {
 
     fn property_macro_branches(&self) -> proc_macro2::TokenStream {
         quote::quote! {}
+    }
+}
+
+impl<T: GenericProperty> GenericProperty for Option<T> {
+    fn cfgs(&self) -> Option<Vec<String>> {
+        self.as_ref().and_then(|v| v.cfgs())
+    }
+
+    fn macros(&self) -> Option<proc_macro2::TokenStream> {
+        self.as_ref().and_then(|v| v.macros())
+    }
+
+    fn property_macro_branches(&self) -> proc_macro2::TokenStream {
+        self.as_ref()
+            .map(|v| v.property_macro_branches())
+            .unwrap_or_default()
     }
 }
 
@@ -134,7 +154,7 @@ macro_rules! driver_configs {
     (@one
         $struct:ident $(<$instance_config:ident>)? ($group:ident) {
             $(
-                $(#[$meta:meta])? $config:ident: $ty:tt $(<$generic:tt>)?,
+                $(#[$meta:meta])* $config:ident: $ty:tt $(<$generic:tt>)?,
             )*
         }
     ) => {
@@ -147,7 +167,7 @@ macro_rules! driver_configs {
             #[serde(default)]
             pub instances: Vec<PeriInstance $(<$instance_config>)?>,
             $(
-                $(#[$meta])?
+                $(#[$meta])*
                 pub $config: $ty $(<$generic>)?
             ),*
         }
@@ -277,29 +297,6 @@ macro_rules! driver_configs {
 
 // TODO: sort this similar to how the product portfolio is organized
 driver_configs![
-    SocProperties {
-        driver: soc,
-        name: "SOC",
-        hide_from_peri_table: true,
-        has_computed_properties: true,
-        properties: {
-            #[serde(default)]
-            cpu_has_csr_pc: bool,
-            #[serde(default)]
-            cpu_has_prv_mode: bool,
-            #[serde(default)]
-            ref_tick_hz: Option<u32>,
-            #[serde(default)]
-            rc_fast_clk_default: Option<u32>,
-            #[serde(default)]
-            rc_slow_clock: Option<u32>,
-            xtal_options: Vec<u32>,
-            #[serde(default)]
-            clocks: DeviceClocks,
-            memory_map: MemoryMap,
-        }
-    },
-
     AdcProperties {
         driver: adc,
         name: "ADC",
@@ -328,15 +325,57 @@ driver_configs![
             has_region_monitor: bool,
         }
     },
+    AvcProperties {
+        driver: avc,
+        name: "Analog Voltage Comparator",
+        properties: {}
+    },
+    BitScramblerProperties {
+        driver: bit_scrambler,
+        name: "Bit Scrambler",
+        properties: {}
+    },
+    BluetoothProperties {
+        driver: bt,
+        name: "Bluetooth",
+        properties: {
+            controller: String,
+        }
+    },
+    CameraProperties {
+        driver: camera,
+        name: "Camera interface", // LCD_CAM, ESP32 I2S, S2 SPI
+        properties: {}
+    },
     DacProperties {
         driver: dac,
         name: "DAC",
         properties: {}
     },
+    DedicatedGpioProperties {
+        driver: dedicated_gpio,
+        name: "Dedicated GPIO",
+        properties: {
+            #[serde(default)]
+            needs_initialization: bool,
+            #[serde(flatten)]
+            channel_properties: DedicatedGpioChannels,
+        }
+    },
     DmaProperties {
         driver: dma,
         name: "DMA",
-        properties: {}
+        properties: {
+            kind: String,
+            #[serde(default)]
+            supports_mem2mem: bool,
+            #[serde(default)]
+            separate_in_out_interrupts: bool,
+            #[serde(default)]
+            max_priority: Option<u32>,
+            #[serde(default)]
+            gdma_version: Option<u32>,
+        }
     },
     DsProperties {
         driver: ds,
@@ -346,7 +385,9 @@ driver_configs![
     EccProperties {
         driver: ecc,
         name: "ECC",
-        properties: {}
+        properties: {
+            working_modes: u32, // TODO: list instead of count
+        }
     },
     EthernetProperties {
         driver: ethernet,
@@ -413,13 +454,6 @@ driver_configs![
             fifo_size: u32,
         }
     },
-    LpI2cMasterProperties {
-        driver: lp_i2c_master,
-        name: "LP I2C master",
-        properties: {
-            fifo_size: u32,
-        }
-    },
     I2cSlaveProperties {
         driver: i2c_slave,
         name: "I2C slave",
@@ -430,11 +464,19 @@ driver_configs![
         name: "I2S",
         properties: {}
     },
+    IeeeProperties {
+        driver: ieee802154,
+        name: "IEEE 802.15.4",
+        properties: {}
+    },
     InterruptProperties {
         driver: interrupts,
         name: "Interrupts",
         properties: {
             status_registers: u32,
+            controller: InterruptControllerProperties,
+            #[serde(flatten)]
+            software_interrupt_properties: SoftwareInterruptProperties,
         }
     },
     IoMuxProperties {
@@ -442,20 +484,29 @@ driver_configs![
         name: "IOMUX",
         properties: {}
     },
-    CameraProperties {
-        driver: camera,
-        name: "Camera interface", // LCD_CAM, ESP32 I2S, S2 SPI
-        properties: {}
-    },
-    RgbProperties {
-        driver: rgb_display,
-        name: "RGB display", // LCD_CAM, ESP32 I2S, S2 SPI
+    KeyManagerProperties {
+        driver: key_manager,
+        name: "Key Manager",
         properties: {}
     },
     LedcProperties {
         driver: ledc,
         name: "LEDC",
         properties: {}
+    },
+    LpI2cMasterProperties {
+        driver: lp_i2c_master,
+        name: "LP I2C master",
+        properties: {
+            fifo_size: u32,
+        }
+    },
+    LpUartProperties {
+        driver: lp_uart,
+        name: "LP UART",
+        properties: {
+            ram_size: u32,
+        }
     },
     McpwmProperties {
         driver: mcpwm,
@@ -465,16 +516,34 @@ driver_configs![
     ParlIoProperties {
         driver: parl_io,
         name: "PARL_IO",
-        properties: {}
+        properties: {
+            version: u32,
+            // TODO: model signal counts, RC CLK out capability, etc.
+        }
     },
     PcntProperties {
         driver: pcnt,
         name: "PCNT",
         properties: {}
     },
+    PhyProperties {
+        driver: phy,
+        name: "PHY",
+        properties: {
+            #[serde(default)]
+            combo_module: bool,
+            #[serde(default)]
+            backed_up_digital_register_count: Option<u32>,
+        }
+    },
     PsramProperties {
         driver: psram,
         name: "PSRAM",
+        properties: {}
+    },
+    RgbProperties {
+        driver: rgb_display,
+        name: "RGB display", // LCD_CAM, ESP32 I2S, S2 SPI
         properties: {}
     },
     RmtProperties {
@@ -510,6 +579,8 @@ driver_configs![
         name: "RNG",
         properties: {
             apb_cycle_wait_num: u32,
+            #[serde(default)]
+            trng_supported: bool,
         }
     },
     RsaProperties {
@@ -531,11 +602,6 @@ driver_configs![
         name: "SDIO slave",
         properties: {}
     },
-    SleepProperties {
-        driver: sleep,
-        name: "Light/deep sleep",
-        properties: {}
-    },
     ShaProperties {
         driver: sha,
         name: "SHA",
@@ -546,18 +612,60 @@ driver_configs![
             algo: ShaAlgoMap,
         }
     },
+    SleepProperties {
+        driver: sleep,
+        name: "Light/deep sleep",
+        properties: {
+            #[serde(default)]
+            light_sleep: bool,
+            #[serde(default)]
+            deep_sleep: bool,
+        }
+    },
+    SocProperties {
+        driver: soc,
+        name: "SOC",
+        hide_from_peri_table: true,
+        properties: {
+            #[serde(default)]
+            cpu_has_branch_predictor: bool,
+            #[serde(default)]
+            cpu_has_csr_pc: bool,
+            #[serde(default)]
+            multi_core_enabled: bool,
+            #[serde(default)]
+            cpu_csr_prv_mode: Option<u32>,
+            #[serde(default)]
+            rc_fast_clk_default: Option<u32>,
+            #[serde(default)]
+            clocks: DeviceClocks,
+            memory_map: MemoryMap,
+        }
+    },
     SpiMasterProperties<SpiMasterInstanceConfig> {
         driver: spi_master,
         name: "SPI master",
         properties: {
             #[serde(default)]
+            supports_dma: bool,
+            #[serde(default)]
             has_octal: bool,
+            #[serde(default)]
+            has_app_interrupts: bool,
+            #[serde(default)]
+            has_dma_segmented_transfer: bool,
+            /// The PCR has a clock pre-divider before the SPI peripheral.
+            #[serde(default)]
+            has_clk_pre_div: bool,
         }
     },
     SpiSlaveProperties<SpiSlaveInstanceConfig> {
         driver: spi_slave,
         name: "SPI slave",
-        properties: {}
+        properties: {
+            #[serde(default)]
+            supports_dma: bool,
+        }
     },
     SysTimerProperties {
         driver: systimer,
@@ -577,10 +685,9 @@ driver_configs![
             timg_has_timer1: bool,
             #[serde(default)]
             timg_has_divcnt_rst: bool,
+
             #[serde(default)]
-            default_clock_source: Option<u32>,
-            #[serde(default)]
-            default_wdt_clock_source: Option<u32>,
+            rc_fast_calibration: Option<RcFastCalibrationProperties>,
         }
     },
     TouchProperties {
@@ -590,7 +697,7 @@ driver_configs![
     },
     TwaiProperties {
         driver: twai,
-        name: "TWAI",
+        name: "TWAI / CAN / CANFD",
         properties: {}
     },
     UartProperties<UartInstanceConfig> {
@@ -602,11 +709,12 @@ driver_configs![
             peripheral_controls_mem_clk: bool,
         }
     },
-    LpUartProperties {
-        driver: lp_uart,
-        name: "LP UART",
+    UhciProperties {
+        driver: uhci,
+        name: "UHCI",
         properties: {
-            ram_size: u32,
+            #[serde(default)]
+            combined_uart_selector_field: bool,
         }
     },
     UlpFsmProperties {
@@ -635,28 +743,9 @@ driver_configs![
         properties: {
             #[serde(default)]
             has_wifi6: bool,
-        }
-    },
-    BluetoothProperties {
-        driver: bt,
-        name: "Bluetooth",
-        properties: {
-            controller: String,
-        }
-    },
-    IeeeProperties {
-        driver: ieee802154,
-        name: "IEEE 802.15.4",
-        properties: {}
-    },
-    PhyProperties {
-        driver: phy,
-        name: "PHY",
-        properties: {
+            mac_version: u32,
             #[serde(default)]
-            combo_module: bool,
-            #[serde(default)]
-            backed_up_digital_register_count: Option<u32>,
+            has_5g: bool,
         }
     },
 ];

@@ -232,7 +232,7 @@ use crate::{
         interconnect::{PeripheralInput, PeripheralOutput},
     },
     peripherals::{Interrupt, RMT},
-    system::{self, GenericPeripheralGuard},
+    system::GenericPeripheralGuard,
     time::Rate,
 };
 
@@ -660,11 +660,11 @@ impl<Dir: Direction> DynChannelAccess<Dir> {
 pub struct TxChannelConfig {
     /// Channel's clock divider
     clk_divider: u8,
-    /// Set the idle output level to low/high
+    /// Whether the idle output level is low/high
     idle_output_level: Level,
-    /// Enable idle output
+    /// Whether idle output is enabled
     idle_output: bool,
-    /// Enable carrier modulation
+    /// Whether carrier modulation is enabled
     carrier_modulation: bool,
     /// Carrier high phase in ticks
     carrier_high: u16,
@@ -697,7 +697,7 @@ impl Default for TxChannelConfig {
 pub struct RxChannelConfig {
     /// Channel's clock divider
     clk_divider: u8,
-    /// Enable carrier demodulation
+    /// Whether carrier demodulation is enabled
     carrier_modulation: bool,
     /// Carrier high phase in ticks
     carrier_high: u16,
@@ -933,8 +933,7 @@ impl<'rmt> Rmt<'rmt, Blocking> {
         for core in crate::system::Cpu::other() {
             crate::interrupt::disable(core, Interrupt::RMT);
         }
-        unsafe { crate::interrupt::bind_interrupt(Interrupt::RMT, handler.handler()) };
-        unwrap!(crate::interrupt::enable(Interrupt::RMT, handler.priority()));
+        crate::interrupt::bind_handler(Interrupt::RMT, handler);
     }
 }
 
@@ -1113,6 +1112,48 @@ mod state {
 
 use state::RmtState;
 
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+struct RmtClockGuard;
+
+impl RmtClockGuard {
+    fn new() -> Self {
+        #[cfg(soc_has_clock_node_rmt_sclk)]
+        crate::soc::clocks::ClockTree::with(|clocks| {
+            if crate::soc::clocks::rmt_sclk_config(clocks).is_none() {
+                crate::soc::clocks::configure_rmt_sclk(clocks, ClockSource::default().into());
+            }
+
+            crate::soc::clocks::request_rmt_sclk(clocks);
+        });
+
+        Self
+    }
+}
+
+impl Drop for RmtClockGuard {
+    fn drop(&mut self) {
+        #[cfg(soc_has_clock_node_rmt_sclk)]
+        crate::soc::clocks::ClockTree::with(crate::soc::clocks::release_rmt_sclk);
+    }
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+struct ChannelGuards {
+    _peripheral: GenericPeripheralGuard<{ crate::system::Peripheral::Rmt as u8 }>,
+    _clock: RmtClockGuard,
+}
+
+impl ChannelGuards {
+    fn new() -> Self {
+        Self {
+            _peripheral: GenericPeripheralGuard::new(),
+            _clock: RmtClockGuard::new(),
+        }
+    }
+}
+
 /// RMT Channel
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -1132,9 +1173,9 @@ where
 
     _mem_guard: MemoryGuard<Dir>,
 
-    // Only the "outermost" Channel/ChannelCreator holds the GenericPeripheralGuard, which avoids
-    // constant inc/dec of the reference count on reborrow and drop.
-    _guard: Option<GenericPeripheralGuard<{ system::Peripheral::Rmt as u8 }>>,
+    // Only the "outermost" Channel/ChannelCreator holds these guards, which avoids constant
+    // inc/dec of the reference counts on reborrow and drop.
+    _guard: Option<ChannelGuards>,
 }
 
 // The reborrowing API treats Channel similar to a smart pointer: Ensure that it's size is actually
@@ -1431,10 +1472,7 @@ impl Drop for RxGuard {
 #[must_use = "transactions need to be `poll()`ed / `wait()`ed for to ensure progress"]
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TxTransaction<'ch, 'data, T>
-where
-    T: Into<PulseCode> + Copy,
-{
+pub struct TxTransaction<'ch, 'data> {
     // This must go first such that it is dropped before the channel (which might disable the
     // peripheral on drop)!
     _guard: TxGuard,
@@ -1444,13 +1482,10 @@ where
     writer: RmtWriter,
 
     // Remaining data that has not yet been written to channel RAM. May be empty.
-    remaining_data: &'data [T],
+    remaining_data: &'data [PulseCode],
 }
 
-impl<'ch, T> TxTransaction<'ch, '_, T>
-where
-    T: Into<PulseCode> + Copy,
-{
+impl<'ch> TxTransaction<'ch, '_> {
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
     fn poll_internal(&mut self) -> Option<Event> {
         let raw = self.channel.raw;
@@ -1487,15 +1522,7 @@ where
         let result = loop {
             match self.poll_internal() {
                 Some(Event::Error) => break Err(Error::TransmissionError),
-                Some(Event::End) => {
-                    if !self.remaining_data.is_empty() {
-                        // Unexpectedly done, even though we have data left: For example, this could
-                        // happen if there is a stop code inside the data and not just at the end.
-                        break Err(Error::TransmissionError);
-                    } else {
-                        break Ok(());
-                    }
-                }
+                Some(Event::End) => break self.writer.state().to_result(),
                 _ => continue,
             }
         };
@@ -1601,7 +1628,8 @@ where
     // the `Rmt` and obtaining a duplicate `ChannelCreator`.
     _rmt: PhantomData<Rmt<'ch, Dm>>,
 
-    // We need to keep the peripheral clocked since the following sequence of events is possible:
+    // We need to keep the peripheral and source clocks alive since the following sequence of
+    // events is possible:
     //
     // ```
     // let cc = {
@@ -1614,7 +1642,7 @@ where
     //
     // If there was no _guard in ChannelCreator, the peripheral would be disabled in step 3, and
     // re-enabled in step 4, losing the clock configuration that was set in step 1.
-    _guard: Option<GenericPeripheralGuard<{ crate::system::Peripheral::Rmt as u8 }>>,
+    _guard: Option<ChannelGuards>,
 }
 
 impl<'ch, Dm, const CHANNEL: u8> ChannelCreator<'ch, Dm, CHANNEL>
@@ -1624,7 +1652,7 @@ where
     fn conjure() -> Self {
         Self {
             _rmt: PhantomData,
-            _guard: Some(GenericPeripheralGuard::new()),
+            _guard: Some(ChannelGuards::new()),
         }
     }
 
@@ -1654,7 +1682,7 @@ where
     pub unsafe fn steal() -> Self {
         Self {
             _rmt: PhantomData,
-            _guard: Some(GenericPeripheralGuard::new()),
+            _guard: Some(ChannelGuards::new()),
         }
     }
 }
@@ -1709,24 +1737,19 @@ impl<'ch> Channel<'ch, Blocking, Tx> {
     /// the transaction to complete and get back the channel for further
     /// use.
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
-    pub fn transmit<'data, T>(
+    pub fn transmit<'data>(
         self,
-        mut data: &'data [T],
-    ) -> Result<TxTransaction<'ch, 'data, T>, (Error, Self)>
-    where
-        T: Into<PulseCode> + Copy,
-    {
+        mut data: &'data [PulseCode],
+    ) -> Result<TxTransaction<'ch, 'data>, (Error, Self)> {
         let raw = self.raw;
         let memsize = raw.memsize();
 
-        match data.last() {
-            None => return Err((Error::InvalidArgument, self)),
-            Some(&code) if code.into().is_end_marker() => (),
-            Some(_) => return Err((Error::EndMarkerMissing, self)),
-        }
-
         let mut writer = RmtWriter::new();
         writer.write(&mut data, raw, true);
+
+        if let WriterState::Error(e) = writer.state() {
+            return Err((e, self));
+        }
 
         raw.clear_tx_interrupts(EnumSet::all());
         raw.start_send(None, memsize);
@@ -1752,14 +1775,11 @@ impl<'ch> Channel<'ch, Blocking, Tx> {
     )]
     /// The length of `data` cannot exceed the size of the allocated RMT RAM.
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
-    pub fn transmit_continuously<T>(
+    pub fn transmit_continuously(
         self,
-        mut data: &[T],
+        mut data: &[PulseCode],
         mode: LoopMode,
-    ) -> Result<ContinuousTxTransaction<'ch>, (Error, Self)>
-    where
-        T: Into<PulseCode> + Copy,
-    {
+    ) -> Result<ContinuousTxTransaction<'ch>, (Error, Self)> {
         let raw = self.raw;
         let memsize = raw.memsize();
 
@@ -1768,10 +1788,13 @@ impl<'ch> Channel<'ch, Blocking, Tx> {
             return Err((Error::InvalidArgument, self));
         }
 
-        if data.is_empty() {
-            return Err((Error::InvalidArgument, self));
-        } else if data.len() > memsize.codes() {
-            return Err((Error::Overflow, self));
+        let mut writer = RmtWriter::new();
+        writer.write(&mut data, raw, true);
+
+        match writer.state() {
+            WriterState::Error(e) => return Err((e, self)),
+            WriterState::Active => return Err((Error::Overflow, self)),
+            WriterState::Done => (),
         }
 
         let mut _guard = TxGuard::new(raw);
@@ -1781,9 +1804,6 @@ impl<'ch> Channel<'ch, Blocking, Tx> {
         }
 
         if _guard.is_active() {
-            let mut writer = RmtWriter::new();
-            writer.write(&mut data, raw, true);
-
             raw.clear_tx_interrupts(EnumSet::all());
             raw.start_send(Some(mode), memsize);
         }
@@ -1799,10 +1819,7 @@ impl<'ch> Channel<'ch, Blocking, Tx> {
 #[must_use = "transactions need to be `poll()`ed / `wait()`ed for to ensure progress"]
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct RxTransaction<'ch, 'data, T>
-where
-    T: From<PulseCode>,
-{
+pub struct RxTransaction<'ch, 'data> {
     // This must go first such that it is dropped before the channel (which might disable the
     // peripheral on drop)!
     _guard: RxGuard,
@@ -1811,13 +1828,10 @@ where
 
     reader: RmtReader,
 
-    data: &'data mut [T],
+    data: &'data mut [PulseCode],
 }
 
-impl<'ch, T> RxTransaction<'ch, '_, T>
-where
-    T: From<PulseCode>,
-{
+impl<'ch> RxTransaction<'ch, '_> {
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
     fn poll_internal(&mut self) -> Option<Event> {
         let raw = self.channel.raw;
@@ -1893,13 +1907,10 @@ impl<'ch> Channel<'ch, Blocking, Rx> {
     ///
     /// # {rx_size_limit}
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
-    pub fn receive<'data, T>(
+    pub fn receive<'data>(
         self,
-        data: &'data mut [T],
-    ) -> Result<RxTransaction<'ch, 'data, T>, (Error, Self)>
-    where
-        T: From<PulseCode>,
-    {
+        data: &'data mut [PulseCode],
+    ) -> Result<RxTransaction<'ch, 'data>, (Error, Self)> {
         let raw = self.raw;
         let memsize = raw.memsize();
 
@@ -1927,24 +1938,18 @@ static WAKER: [AtomicWaker; NUM_CHANNELS] = [const { AtomicWaker::new() }; NUM_C
 static RMT_LOCK: RawMutex = RawMutex::new();
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-struct TxFuture<'a, T>
-where
-    T: Into<PulseCode> + Copy,
-{
+struct TxFuture<'a> {
     raw: DynChannelAccess<Tx>,
     _phantom: PhantomData<Channel<'a, Async, Tx>>,
     writer: RmtWriter,
 
     // Remaining data that has not yet been written to channel RAM. May be empty.
-    data: &'a [T],
+    data: &'a [PulseCode],
 
     _guard: TxGuard,
 }
 
-impl<T> core::future::Future for TxFuture<'_, T>
-where
-    T: Into<PulseCode> + Copy,
-{
+impl core::future::Future for TxFuture<'_> {
     type Output = Result<(), Error>;
 
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
@@ -1952,7 +1957,7 @@ where
         let this = self.get_mut();
         let raw = this.raw;
 
-        if let WriterState::Error(err) = this.writer.state {
+        if let WriterState::Error(err) = this.writer.state() {
             return Poll::Ready(Err(err));
         }
 
@@ -1960,20 +1965,13 @@ where
 
         let result = match raw.get_tx_status() {
             Some(Event::Error) => Err(Error::TransmissionError),
-            Some(Event::End) => {
-                if this.writer.state == WriterState::Active {
-                    // Unexpectedly done, even though we have data left.
-                    Err(Error::TransmissionError)
-                } else {
-                    Ok(())
-                }
-            }
+            Some(Event::End) => this.writer.state().to_result(),
             Some(Event::Threshold) => {
                 raw.clear_tx_interrupts(Event::Threshold);
 
                 this.writer.write(&mut this.data, raw, false);
 
-                if this.writer.state == WriterState::Active {
+                if this.writer.state() == WriterState::Active {
                     raw.listen_tx_interrupt(Event::Threshold);
                 }
 
@@ -1992,29 +1990,15 @@ where
 impl Channel<'_, Async, Tx> {
     /// Start transmitting the given pulse code sequence.
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
-    pub fn transmit<T>(&mut self, mut data: &[T]) -> impl Future<Output = Result<(), Error>>
-    where
-        T: Into<PulseCode> + Copy,
-    {
+    pub fn transmit(&mut self, mut data: &[PulseCode]) -> impl Future<Output = Result<(), Error>> {
         let raw = self.raw;
         let memsize = raw.memsize();
 
         let mut writer = RmtWriter::new();
+        writer.write(&mut data, raw, true);
 
-        match data.last() {
-            None => {
-                writer.state = WriterState::Error(Error::InvalidArgument);
-            }
-            Some(&code) if code.into().is_end_marker() => (),
-            Some(_) => {
-                writer.state = WriterState::Error(Error::EndMarkerMissing);
-            }
-        }
-
-        let _guard = if !matches!(writer.state, WriterState::Error(_)) {
-            writer.write(&mut data, raw, true);
-
-            let wrap = match writer.state {
+        let _guard = if writer.state().is_ok() {
+            let wrap = match writer.state() {
                 WriterState::Error(_) => false,
                 WriterState::Active => true,
                 WriterState::Done => false,
@@ -2044,21 +2028,15 @@ impl Channel<'_, Async, Tx> {
 }
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-struct RxFuture<'a, T>
-where
-    T: From<PulseCode> + Unpin,
-{
+struct RxFuture<'a> {
     raw: DynChannelAccess<Rx>,
     _phantom: PhantomData<Channel<'a, Async, Rx>>,
     reader: RmtReader,
-    data: &'a mut [T],
+    data: &'a mut [PulseCode],
     _guard: RxGuard,
 }
 
-impl<T> core::future::Future for RxFuture<'_, T>
-where
-    T: From<PulseCode> + Unpin,
-{
+impl core::future::Future for RxFuture<'_> {
     type Output = Result<usize, Error>;
 
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
@@ -2114,10 +2092,10 @@ impl Channel<'_, Async, Rx> {
     ///
     /// # {rx_size_limit}
     #[cfg_attr(place_rmt_driver_in_ram, ram)]
-    pub fn receive<T>(&mut self, data: &mut [T]) -> impl Future<Output = Result<usize, Error>>
-    where
-        T: From<PulseCode> + Unpin,
-    {
+    pub fn receive(
+        &mut self,
+        data: &mut [PulseCode],
+    ) -> impl Future<Output = Result<usize, Error>> {
         let raw = self.raw;
         let memsize = raw.memsize();
 
@@ -2269,7 +2247,11 @@ for_each_rmt_clock_source!(
                     ClockSource::Apb => Clocks::get().apb_clock,
 
                     #[cfg(rmt_supports_rcfast_clock)]
-                    ClockSource::RcFast => todo!(),
+                    ClockSource::RcFast => {
+                        Rate::from_hz(crate::soc::clocks::ClockTree::with(
+                            crate::soc::clocks::rc_fast_clk_frequency,
+                        ))
+                    }
 
                     #[cfg(rmt_supports_xtal_clock)]
                     ClockSource::Xtal => Clocks::get().xtal_clock,
@@ -2284,6 +2266,28 @@ for_each_rmt_clock_source!(
         }
     };
 );
+
+#[cfg(soc_has_clock_node_rmt_sclk)]
+impl From<ClockSource> for crate::soc::clocks::RmtSclkConfig {
+    fn from(value: ClockSource) -> Self {
+        match value {
+            #[cfg(rmt_supports_apb_clock)]
+            ClockSource::Apb => Self::ApbClk,
+
+            #[cfg(rmt_supports_rcfast_clock)]
+            ClockSource::RcFast => Self::RcFastClk,
+
+            #[cfg(rmt_supports_xtal_clock)]
+            ClockSource::Xtal => Self::XtalClk,
+
+            #[cfg(rmt_supports_pll80mhz_clock)]
+            ClockSource::Pll80MHz => Self::PllF80m,
+
+            #[cfg(rmt_supports_reftick_clock)]
+            ClockSource::RefTick => unreachable!(),
+        }
+    }
+}
 
 // Obtain maximum value for a register field from the PAC's register spec.
 macro_rules! max_from_register_spec {
@@ -2340,33 +2344,44 @@ mod chip_specific {
     }
 
     pub(super) fn configure_clock(source: ClockSource, div: u8) {
+        #[cfg(soc_has_clock_node_rmt_sclk)]
+        let _ = source;
+
         #[cfg(not(soc_has_pcr))]
-        {
-            RMT::regs().sys_conf().modify(|_, w| unsafe {
+        RMT::regs().sys_conf().modify(|_, w| unsafe {
+            #[cfg(not(soc_has_clock_node_rmt_sclk))]
+            {
                 w.clk_en().clear_bit();
                 w.sclk_sel().bits(source.bits());
-                w.sclk_div_num().bits(div);
-                w.sclk_div_a().bits(0);
-                w.sclk_div_b().bits(0);
-                w.apb_fifo_mask().set_bit()
-            });
-        }
+            }
+
+            w.sclk_div_num().bits(div);
+            w.sclk_div_a().bits(0);
+            w.sclk_div_b().bits(0);
+            w.apb_fifo_mask().set_bit()
+        });
 
         #[cfg(soc_has_pcr)]
         {
             use crate::peripherals::PCR;
 
             PCR::regs().rmt_sclk_conf().modify(|_, w| unsafe {
+                #[cfg(not(soc_has_clock_node_rmt_sclk))]
                 cfg_if::cfg_if!(
-                    if #[cfg(esp32c6)] {
-                        w.sclk_sel().bits(source.bits())
+                    if #[cfg(any(esp32c5, esp32c6))] {
+                        w.sclk_sel().bits(source.bits());
                     } else {
-                        w.sclk_sel().bit(source.bit())
+                        w.sclk_sel().bit(source.bit());
                     }
                 );
+
                 w.sclk_div_num().bits(div);
                 w.sclk_div_a().bits(0);
-                w.sclk_div_b().bits(0)
+                w.sclk_div_b().bits(0);
+                #[cfg(not(soc_has_clock_node_rmt_sclk))]
+                w.sclk_en().set_bit();
+
+                w
             });
 
             RMT::regs()
@@ -2467,6 +2482,18 @@ mod chip_specific {
             } else {
                 rmt.ch_rx_conf0(ch_idx)
                     .modify(|_, w| unsafe { w.mem_size().bits(blocks) });
+            }
+        }
+
+        #[inline(always)]
+        pub fn reset_channel_clock_divider(self) {
+            #[cfg(esp32c5)]
+            {
+                let mask = 1u32 << self.channel();
+                let rmt = RMT::regs();
+
+                rmt.ref_cnt_rst().write(|w| unsafe { w.bits(mask) });
+                rmt.ref_cnt_rst().write(|w| unsafe { w.bits(0) });
             }
         }
     }
@@ -2574,6 +2601,8 @@ mod chip_specific {
         pub fn start_tx(self) {
             let rmt = crate::peripherals::RMT::regs();
             let ch_idx = self.ch_idx as usize;
+
+            self.reset_channel_clock_divider();
 
             rmt.ch_tx_conf0(ch_idx).modify(|_, w| {
                 w.mem_rd_rst().set_bit();
@@ -2714,6 +2743,8 @@ mod chip_specific {
         pub fn start_rx(self) {
             let rmt = crate::peripherals::RMT::regs();
             let ch_idx = self.ch_idx as u8;
+
+            self.reset_channel_clock_divider();
 
             for i in 1..self.memsize().blocks() {
                 rmt.ch_rx_conf1((ch_idx + i).into())
@@ -3237,7 +3268,7 @@ mod chip_specific {
             // 1) setting the mem_owner to an invalid value. This doesn't seem to trigger an error
             //    immediately, so presumably the error only occurs when a new pulse code would be
             //    written.
-            // 2) lowering the idle treshold and change other settings to make exceeding the
+            // 2) lowering the idle threshold and change other settings to make exceeding the
             //    threshold more likely (lower clock divider, enable and set an input filter that is
             //    longer than the idle threshold). The latter should have the same effect as
             //    reconnecting the pin to a constant level, but that tricky to do since we'd also

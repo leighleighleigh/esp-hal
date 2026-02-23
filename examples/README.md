@@ -13,10 +13,14 @@ For more information regarding the examples, refer to the `README.md` file in an
 You can build all examples for a given device using the `build examples` subcommand:
 
 ```shell
-cargo xtask build examples esp-hal --chip esp32 all
+cargo xtask build examples --chip esp32 all
 ```
 
-Note that we must specify which package to build the examples for, since this repository contains multiple packages. Specifying `esp-hal` will build the examples in the `examples/` directory instead.
+Or build a single example with: 
+
+```shell
+cargo xtask build examples --chip esp32c6 hello_world
+```
 
 ## Running Examples
 
@@ -32,7 +36,7 @@ Again, note that we must specify which package to build the example from, plus w
 
 If you are contributing to `esp-hal` and would like to add an example, the process is generally the same as any other project. The `Cargo.toml` file should include a feature for each supported chip, which itself should enable any dependency's features required for the given chip.
 
-Another thing to be aware of is the GPIO pins being used. We have tried to use pins available the DevKit-C boards from Espressif, however this is being done on a best-effort basis.
+Another thing to be aware of is the GPIO pins being used. We have tried to use pins available on the DevKit-C boards from Espressif, however this is being done on a best-effort basis.
 
 In general, the following GPIO are recommended for use, though be conscious of whether certain pins are used for UART, strapping pins, etc. on some devices:
 

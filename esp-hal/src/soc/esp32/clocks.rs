@@ -17,16 +17,17 @@
 use esp_rom_sys::rom::{ets_delay_us, ets_update_cpu_frequency_rom};
 
 use crate::{
+    clock::Clocks,
     efuse::{Efuse, VOL_LEVEL_HP_INV},
-    peripherals::{APB_CTRL, DPORT, LPWR, RTC_IO, TIMG0, TIMG1},
+    peripherals::{APB_CTRL, LPWR, RTC_IO, SYSTEM, TIMG0, TIMG1, UART0, UART1, UART2},
+    rtc_cntl::Rtc,
     soc::regi2c,
     time::Rate,
 };
 
 define_clock_tree_types!();
 
-// TODO: this should replace the current CpuClock enum. CpuClock is a bit of a misleading
-// name as this will configure multiple things.
+/// Clock configuration options.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(
@@ -34,70 +35,93 @@ define_clock_tree_types!();
     reason = "MHz suffix indicates physical unit."
 )]
 #[non_exhaustive]
-pub(crate) enum CpuClock {
+pub enum CpuClock {
+    /// 80 MHz CPU clock
     #[default]
-    _80MHz,
-    _160MHz,
-    _240MHz,
-    Custom(ClockConfig),
+    _80MHz  = 80,
+
+    /// 160 MHz CPU clock
+    _160MHz = 160,
+
+    /// 240 MHz CPU clock
+    _240MHz = 240,
 }
 
 impl CpuClock {
-    pub(crate) fn configure(self) {
-        // Resolve presets
-        // TODO: set some defaults to RTC clocks
-        let mut config = match self {
-            CpuClock::_80MHz => ClockConfig {
-                xtal_clk: None,
-                pll_clk: Some(PllClkConfig::_320),
-                apll_clk: None,
-                cpu_pll_div: Some(CpuPllDivConfig::_4),
-                syscon_pre_div: None,
-                cpu_clk: Some(CpuClkConfig::Pll),
-                rtc_slow_clk: None,
-                rtc_fast_clk: None,
-            },
-            CpuClock::_160MHz => ClockConfig {
-                xtal_clk: None,
-                pll_clk: Some(PllClkConfig::_320),
-                apll_clk: None,
-                cpu_pll_div: Some(CpuPllDivConfig::_2),
-                syscon_pre_div: None,
-                cpu_clk: Some(CpuClkConfig::Pll),
-                rtc_slow_clk: None,
-                rtc_fast_clk: None,
-            },
-            CpuClock::_240MHz => ClockConfig {
-                xtal_clk: None,
-                pll_clk: Some(PllClkConfig::_480),
-                apll_clk: None,
-                cpu_pll_div: Some(CpuPllDivConfig::_2),
-                syscon_pre_div: None,
-                cpu_clk: Some(CpuClkConfig::Pll),
-                rtc_slow_clk: None,
-                rtc_fast_clk: None,
-            },
-            CpuClock::Custom(clock_config) => clock_config,
-        };
+    const PRESET_80: ClockConfig = ClockConfig {
+        xtal_clk: None,
+        pll_clk: Some(PllClkConfig::_320),
+        apll_clk: None,
+        cpu_pll_div: Some(CpuPllDivConfig::_4),
+        syscon_pre_div: None,
+        cpu_clk: Some(CpuClkConfig::Pll),
+        rtc_slow_clk: Some(RtcSlowClkConfig::RcSlow),
+        rtc_fast_clk: Some(RtcFastClkConfig::Rc),
+    };
+    const PRESET_160: ClockConfig = ClockConfig {
+        xtal_clk: None,
+        pll_clk: Some(PllClkConfig::_320),
+        apll_clk: None,
+        cpu_pll_div: Some(CpuPllDivConfig::_2),
+        syscon_pre_div: None,
+        cpu_clk: Some(CpuClkConfig::Pll),
+        rtc_slow_clk: Some(RtcSlowClkConfig::RcSlow),
+        rtc_fast_clk: Some(RtcFastClkConfig::Rc),
+    };
+    const PRESET_240: ClockConfig = ClockConfig {
+        xtal_clk: None,
+        pll_clk: Some(PllClkConfig::_480),
+        apll_clk: None,
+        cpu_pll_div: Some(CpuPllDivConfig::_2),
+        syscon_pre_div: None,
+        cpu_clk: Some(CpuClkConfig::Pll),
+        rtc_slow_clk: Some(RtcSlowClkConfig::RcSlow),
+        rtc_fast_clk: Some(RtcFastClkConfig::Rc),
+    };
+}
 
+impl From<CpuClock> for ClockConfig {
+    fn from(value: CpuClock) -> ClockConfig {
+        match value {
+            CpuClock::_80MHz => CpuClock::PRESET_80,
+            CpuClock::_160MHz => CpuClock::PRESET_160,
+            CpuClock::_240MHz => CpuClock::PRESET_240,
+        }
+    }
+}
+
+impl Default for ClockConfig {
+    fn default() -> Self {
+        Self::from(CpuClock::default())
+    }
+}
+
+impl ClockConfig {
+    pub(crate) fn try_get_preset(self) -> Option<CpuClock> {
+        match self {
+            v if v == CpuClock::PRESET_80 => Some(CpuClock::_80MHz),
+            v if v == CpuClock::PRESET_160 => Some(CpuClock::_160MHz),
+            v if v == CpuClock::PRESET_240 => Some(CpuClock::_240MHz),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn configure(mut self) {
         // Detect XTAL if unset.
         // FIXME: this doesn't support running from RC_FAST_CLK. We should rework detection to only
         // run when requesting XTAL.
         ClockTree::with(|clocks| {
-            if config.xtal_clk.is_none() {
+            if self.xtal_clk.is_none() {
                 let xtal = detect_xtal_freq(clocks);
                 debug!("Auto-detected XTAL frequency: {}", xtal.value());
-                config.xtal_clk = Some(xtal);
+                self.xtal_clk = Some(xtal);
             }
         });
 
-        config.apply();
+        self.apply();
     }
 }
 
-// TODO: this could be chip-independent
-// We're rather impolite in this function by not saving and restoring configuration, but this is
-// expected to run before configuring CPU clocks anyway.
 fn detect_xtal_freq(clocks: &mut ClockTree) -> XtalClkConfig {
     const SLOW_CLOCK_CYCLES: u32 = 100;
 
@@ -106,45 +130,14 @@ fn detect_xtal_freq(clocks: &mut ClockTree) -> XtalClkConfig {
     configure_syscon_pre_div(clocks, SysconPreDivConfig::new(0));
     configure_cpu_clk(clocks, CpuClkConfig::Xtal);
 
-    // Make sure the process doesn't time out due to some spooky configuration.
-    #[cfg(not(esp32))]
-    TIMG0::regs().rtccalicfg2().reset();
+    let (xtal_cycles, calibration_clock_frequency) = Clocks::measure_rtc_clock(
+        clocks,
+        Timg0CalibrationClockConfig::RcSlowClk,
+        SLOW_CLOCK_CYCLES,
+    );
 
-    TIMG0::regs()
-        .rtccalicfg()
-        .modify(|_, w| w.rtc_cali_start().clear_bit());
+    let mhz = (calibration_clock_frequency * xtal_cycles / SLOW_CLOCK_CYCLES).as_mhz();
 
-    configure_timg0_calibration_clock(clocks, Timg0CalibrationClockConfig::default());
-    request_timg0_calibration_clock(clocks);
-
-    let calibration_clock_frequency = timg0_calibration_clock_frequency(clocks);
-
-    TIMG0::regs().rtccalicfg().modify(|_, w| unsafe {
-        w.rtc_cali_max().bits(SLOW_CLOCK_CYCLES as u16);
-        w.rtc_cali_start_cycling().clear_bit();
-        w.rtc_cali_start().set_bit()
-    });
-
-    // Delay, otherwise the CPU may read back the previous state of the completion flag and skip
-    // waiting.
-    ets_delay_us(SLOW_CLOCK_CYCLES * 1_000_000 / calibration_clock_frequency);
-
-    // Wait for the calibration to finish
-    while TIMG0::regs()
-        .rtccalicfg()
-        .read()
-        .rtc_cali_rdy()
-        .bit_is_clear()
-    {}
-
-    let cali_value = TIMG0::regs().rtccalicfg1().read().rtc_cali_value().bits();
-
-    TIMG0::regs()
-        .rtccalicfg()
-        .modify(|_, w| w.rtc_cali_start().clear_bit());
-    release_timg0_calibration_clock(clocks);
-
-    let mhz = (cali_value * (calibration_clock_frequency / SLOW_CLOCK_CYCLES)) / 1_000_000;
     if mhz.abs_diff(40) < mhz.abs_diff(26) {
         XtalClkConfig::_40
     } else {
@@ -173,16 +166,15 @@ fn configure_xtal_clk_impl(_clocks: &mut ClockTree, config: XtalClkConfig) {
     // similar to ESP-IDF, just in case something relies on that, or, if we can in the future read
     // back the value instead of wasting RAM on it.
 
-    const DISABLE_ROM_LOG: u32 = 1;
-
+    // Used by `rtc_clk_xtal_freq_get` patched ROM function.
     let freq_mhz = config.value() / 1_000_000;
     LPWR::regs().store4().modify(|r, w| unsafe {
         // The data is stored in two copies of 16-bit values. The first bit overwrites the LSB of
         // the frequency value with DISABLE_ROM_LOG.
 
         // Copy the DISABLE_ROM_LOG bit
-        let disable_rom_log_bit = r.bits() & DISABLE_ROM_LOG;
-        let half = (freq_mhz & (0xFFFF & !DISABLE_ROM_LOG)) | disable_rom_log_bit;
+        let disable_rom_log_bit = r.bits() & Rtc::RTC_DISABLE_ROM_LOG;
+        let half = (freq_mhz & (0xFFFF & !Rtc::RTC_DISABLE_ROM_LOG)) | disable_rom_log_bit;
         w.data().bits(half | (half << 16))
     });
 }
@@ -336,6 +328,12 @@ fn enable_rc_fast_clk_impl(_clocks: &mut ClockTree, en: bool) {
         w.ck8m_force_pd().bit(power_down);
         w.ck8m_force_pu().bit(!power_down)
     });
+}
+
+// PLL_F160M_CLK
+
+fn enable_pll_f160m_clk_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do.
 }
 
 // CPU_PLL_DIV_IN
@@ -493,7 +491,7 @@ fn configure_cpu_clk_impl(
         _ => 0, // divide-by-4 or don't care
     };
 
-    DPORT::regs()
+    SYSTEM::regs()
         .cpu_per_conf()
         .modify(|_, w| unsafe { w.cpuperiod_sel().bits(clock_source_sel1_bit) });
 
@@ -535,12 +533,6 @@ fn enable_apb_clk_80m_impl(_clocks: &mut ClockTree, _en: bool) {
 // XTAL32K_CLK
 
 fn enable_xtal32k_clk_impl(_clocks: &mut ClockTree, en: bool) {
-    // This bit only enables the clock for the digital core, what about RTC? Should we split the
-    // clock node in two?
-    LPWR::regs()
-        .clk_conf()
-        .modify(|_, w| w.dig_xtal32k_en().bit(en));
-
     // RTCIO could be configured to allow an external oscillator to be used. We could model this
     // with a MUX, probably, but this is omitted for now for simplicity.
 
@@ -567,17 +559,24 @@ fn enable_xtal32k_clk_impl(_clocks: &mut ClockTree, en: bool) {
         w.x32p_mux_sel().bit(en);
         w.xpd_xtal_32k().bit(en)
     });
+
+    // Enable for digital part
+    LPWR::regs()
+        .clk_conf()
+        .modify(|_, w| w.dig_xtal32k_en().bit(en));
 }
 
 // RC_SLOW_CLK
 
-fn enable_rc_slow_clk_impl(_clocks: &mut ClockTree, _en: bool) {
-    // SCK_DCAP value controls tuning of 150k clock. The higher the value of DCAP, the lower the
-    // frequency. There is no separate enable bit, just make sure the calibration value is set.
-    const RTC_CNTL_SCK_DCAP_DEFAULT: u8 = 255;
-    LPWR::regs()
-        .reg()
-        .modify(|_, w| unsafe { w.sck_dcap().bits(RTC_CNTL_SCK_DCAP_DEFAULT) });
+fn enable_rc_slow_clk_impl(_clocks: &mut ClockTree, en: bool) {
+    if en {
+        // SCK_DCAP value controls tuning of 150k clock. The higher the value of DCAP, the lower the
+        // frequency. There is no separate enable bit, just make sure the calibration value is set.
+        const RTC_CNTL_SCK_DCAP_DEFAULT: u8 = 255;
+        LPWR::regs()
+            .reg()
+            .modify(|_, w| unsafe { w.sck_dcap().bits(RTC_CNTL_SCK_DCAP_DEFAULT) });
+    }
 }
 
 // RC_FAST_DIV_CLK
@@ -608,7 +607,7 @@ fn configure_rtc_slow_clk_impl(
 ) {
     LPWR::regs().clk_conf().modify(|_, w| match new_selector {
         RtcSlowClkConfig::RcSlow => w.ana_clk_rtc_sel().slow_ck(),
-        RtcSlowClkConfig::Xtal => w.ana_clk_rtc_sel().ck_xtal_32k(),
+        RtcSlowClkConfig::Xtal32k => w.ana_clk_rtc_sel().ck_xtal_32k(),
         RtcSlowClkConfig::RcFast => w.ana_clk_rtc_sel().ck8m_d256_out(),
     });
 }
@@ -628,6 +627,53 @@ fn configure_rtc_fast_clk_impl(
         RtcFastClkConfig::Xtal => w.fast_clk_rtc_sel().xtal_div_4(),
         RtcFastClkConfig::Rc => w.fast_clk_rtc_sel().ck8m(),
     });
+}
+
+// UART_MEM_CLK
+
+fn enable_uart_mem_clk_impl(_clocks: &mut ClockTree, en: bool) {
+    // TODO: these functions (peripheral bus clock control) should be generated,
+    // replacing current PeripheralClockControl code.
+    // Enabling clock should probably not reset the peripheral.
+    let regs = SYSTEM::regs();
+
+    if en {
+        regs.perip_rst_en()
+            .modify(|_, w| w.uart_mem_rst().bit(true));
+        regs.perip_rst_en()
+            .modify(|_, w| w.uart_mem_rst().bit(false));
+    }
+
+    regs.perip_clk_en()
+        .modify(|_, w| w.uart_mem_clk_en().bit(en));
+}
+
+// MCPWM0_FUNCTION_CLOCK
+
+fn enable_mcpwm0_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do.
+}
+
+fn configure_mcpwm0_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Mcpwm0FunctionClockConfig>,
+    _new_selector: Mcpwm0FunctionClockConfig,
+) {
+    // Nothing to do.
+}
+
+// MCPWM1_FUNCTION_CLOCK
+
+fn enable_mcpwm1_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do.
+}
+
+fn configure_mcpwm1_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Mcpwm0FunctionClockConfig>,
+    _new_selector: Mcpwm0FunctionClockConfig,
+) {
+    // Nothing to do.
 }
 
 // TIMG0_CALIBRATION_CLOCK
@@ -672,4 +718,97 @@ fn configure_timg1_calibration_clock_impl(
     TIMG1::regs()
         .rtccalicfg()
         .modify(|_, w| unsafe { w.rtc_cali_clk_sel().bits(new_selector.cali_clk_sel_bits()) });
+}
+
+// UART0_MEM_CLOCK
+
+fn enable_uart0_mem_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do.
+}
+
+fn configure_uart0_mem_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0MemClockConfig>,
+    _new_selector: Uart0MemClockConfig,
+) {
+    // Nothing to do.
+}
+
+// UART0_FUNCTION_CLOCK
+
+fn enable_uart0_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do
+}
+
+fn configure_uart0_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0FunctionClockConfig>,
+    new_selector: Uart0FunctionClockConfig,
+) {
+    UART0::regs().conf0().modify(|_, w| {
+        w.tick_ref_always_on()
+            .bit(new_selector == Uart0FunctionClockConfig::Apb)
+    });
+}
+
+// UART1_MEM_CLOCK
+
+fn enable_uart1_mem_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do.
+}
+
+fn configure_uart1_mem_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0MemClockConfig>,
+    _new_selector: Uart0MemClockConfig,
+) {
+    // Nothing to do.
+}
+
+// UART1_FUNCTION_CLOCK
+
+fn enable_uart1_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do
+}
+
+fn configure_uart1_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0FunctionClockConfig>,
+    new_selector: Uart0FunctionClockConfig,
+) {
+    UART1::regs().conf0().modify(|_, w| {
+        w.tick_ref_always_on()
+            .bit(new_selector == Uart0FunctionClockConfig::Apb)
+    });
+}
+
+// UART2_MEM_CLOCK
+
+fn enable_uart2_mem_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do.
+}
+
+fn configure_uart2_mem_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0MemClockConfig>,
+    _new_selector: Uart0MemClockConfig,
+) {
+    // Nothing to do.
+}
+
+// UART2_FUNCTION_CLOCK
+
+fn enable_uart2_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // Nothing to do
+}
+
+fn configure_uart2_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0FunctionClockConfig>,
+    new_selector: Uart0FunctionClockConfig,
+) {
+    UART2::regs().conf0().modify(|_, w| {
+        w.tick_ref_always_on()
+            .bit(new_selector == Uart0FunctionClockConfig::Apb)
+    });
 }

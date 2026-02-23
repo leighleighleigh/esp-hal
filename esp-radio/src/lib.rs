@@ -10,6 +10,7 @@
 #![cfg_attr(esp32s3, doc = "**ESP32-S3**")]
 #![cfg_attr(esp32c2, doc = "**ESP32-C2**")]
 #![cfg_attr(esp32c3, doc = "**ESP32-C3**")]
+#![cfg_attr(esp32c5, doc = "**ESP32-C5**")]
 #![cfg_attr(esp32c6, doc = "**ESP32-C6**")]
 #![cfg_attr(esp32h2, doc = "**ESP32-H2**")]
 //! . Please ensure you are reading the correct documentation for your target
@@ -28,7 +29,46 @@
 //! application. For the dynamic allocator, we recommend using `esp-alloc`. For the task scheduler,
 //! the simplest option that is supported by us is `esp-rtos`, but you may use Ariel
 //! OS or other operating systems as well.
+#![cfg_attr(
+    feature = "ieee802154",
+    doc = "<div class=\"warning\"><b>Hint:</b> The scheduler is not required for the 802.15.4.</div>"
+)]
+#![doc = ""]
+//! ```rust, no_run
+#![doc = esp_hal::before_snippet!()]
+//! use esp_hal::interrupt::software::SoftwareInterruptControl;
+//! use esp_hal::ram;
+//! use esp_hal::timer::timg::TimerGroup;
 //!
+//! esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 64 * 1024);
+//! esp_alloc::heap_allocator!(size: 36 * 1024);
+//!
+//! let timg0 = TimerGroup::new(peripherals.TIMG0);
+//! let sw_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+//!
+//! // THIS IS IMPORTANT FOR WIFI AND BLE: You MUST start the scheduler
+//! // before initializing the radio!
+//! esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
+#![cfg_attr(
+    wifi_driver_supported,
+    doc = r#"
+
+if let Ok((controller, interfaces)) = esp_radio::wifi::new(
+    peripherals.WIFI,
+    Default::default(),
+) {}
+"#
+)]
+#![cfg_attr(
+    all(bt_driver_supported, not(wifi_driver_supported)),
+    doc = r#"
+
+# use esp_radio::ble::controller::BleConnector;
+if let Ok(controller) = BleConnector::new(peripherals.BT, Default::default()) {}
+"#
+)]
+#![doc = esp_hal::after_snippet!()]
+//! ```
 //! ```toml
 //! [dependencies.esp-radio]
 //! # A supported chip needs to be specified, as well as specific use-case features
@@ -109,13 +149,8 @@
 #![doc(html_logo_url = "https://avatars.githubusercontent.com/u/46717278")]
 #![no_std]
 #![cfg_attr(xtensa, feature(asm_experimental_arch))]
-#![cfg_attr(feature = "sys-logs", feature(c_variadic))]
-#![deny(rust_2018_idioms, rustdoc::all)]
-#![allow(rustdoc::bare_urls)]
-// allow until num-derive doesn't generate this warning anymore (unknown_lints because Xtensa
-// toolchain doesn't know about that lint, yet)
-#![allow(unknown_lints)]
-#![allow(non_local_definitions)]
+#![cfg_attr(feature = "print-logs-from-driver", feature(c_variadic))]
+#![deny(missing_docs, rust_2018_idioms, rustdoc::all)]
 #![cfg_attr(
     not(any(feature = "wifi", feature = "ble")),
     allow(
@@ -136,6 +171,7 @@ extern crate alloc;
 // MUST be the first module
 mod fmt;
 
+use docsplay::Display;
 use esp_hal as hal;
 #[cfg(feature = "unstable")]
 #[cfg_attr(docsrs, doc(cfg(feature = "unstable")))]
@@ -143,7 +179,6 @@ pub use esp_phy::CalibrationResult;
 #[cfg(not(feature = "unstable"))]
 use esp_phy::CalibrationResult;
 use esp_radio_rtos_driver as preempt;
-use esp_sync::RawMutex;
 #[cfg(esp32)]
 use hal::analog::adc::{release_adc2, try_claim_adc2};
 #[cfg(feature = "wifi")]
@@ -154,6 +189,10 @@ use hal::{
 };
 use sys::include::esp_phy_calibration_data_t;
 
+#[cfg(feature = "ble")]
+pub use crate::private::InitializationError;
+#[cfg(not(feature = "ble"))]
+use crate::private::InitializationError;
 pub(crate) mod sys {
     #[cfg(esp32)]
     pub use esp_wifi_sys_esp32::*;
@@ -161,6 +200,8 @@ pub(crate) mod sys {
     pub use esp_wifi_sys_esp32c2::*;
     #[cfg(esp32c3)]
     pub use esp_wifi_sys_esp32c3::*;
+    #[cfg(esp32c5)]
+    pub use esp_wifi_sys_esp32c5::*;
     #[cfg(esp32c6)]
     pub use esp_wifi_sys_esp32c6::*;
     #[cfg(esp32h2)]
@@ -207,26 +248,28 @@ pub mod wifi;
 
 unstable_module! {
     #[cfg(feature = "esp-now")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "esp-now")))]
     pub mod esp_now;
     #[cfg(feature = "ble")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ble")))]
     pub mod ble;
     #[cfg(feature = "ieee802154")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ieee802154")))]
     pub mod ieee802154;
 }
 
 pub(crate) mod common_adapter;
-pub(crate) mod memory_fence;
 
-pub(crate) static ESP_RADIO_LOCK: RawMutex = RawMutex::new();
+#[cfg(all(feature = "ble", bt_controller = "npl"))]
+pub(crate) static ESP_RADIO_LOCK: esp_sync::RawMutex = esp_sync::RawMutex::new();
 
-static RADIO_REFCOUNT: critical_section::Mutex<core::cell::Cell<u32>> =
-    critical_section::Mutex::new(core::cell::Cell::new(0));
+static RADIO_REFCOUNT: esp_sync::NonReentrantMutex<u32> = esp_sync::NonReentrantMutex::new(0);
 
 // this is just to verify that we use the correct defaults in `build.rs`
 #[allow(clippy::assertions_on_constants)] // TODO: try assert_eq once it's usable in const context
 const _: () = {
     cfg_if::cfg_if! {
-        if #[cfg(not(esp32h2))] {
+        if #[cfg(wifi_driver_supported)] {
             core::assert!(sys::include::CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM == 10);
             core::assert!(sys::include::CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM == 32);
             core::assert!(sys::include::WIFI_STATIC_TX_BUFFER_NUM == 0);
@@ -322,20 +365,14 @@ impl RadioRefGuard {
     /// Increments the refcount. If the old count was 0, it performs hardware init.
     /// If hardware init fails, it rolls back the refcount only once.
     fn new() -> Result<Self, InitializationError> {
-        critical_section::with(|cs| {
+        RADIO_REFCOUNT.with(|rc| {
             debug!("Creating RadioRefGuard");
-            let rc = RADIO_REFCOUNT.borrow(cs);
 
-            let prev = rc.get();
-            rc.set(prev + 1);
-
-            if prev == 0
-                && let Err(e) = init()
-            {
-                rc.set(prev);
-                return Err(e);
+            if *rc == 0 {
+                init()?;
             }
 
+            *rc += 1;
             Ok(RadioRefGuard)
         })
     }
@@ -344,18 +381,14 @@ impl RadioRefGuard {
 impl Drop for RadioRefGuard {
     /// Decrements the refcount. If the count drops to 0, it performs hardware de-init.
     fn drop(&mut self) {
-        critical_section::with(|cs| {
+        RADIO_REFCOUNT.with(|rc| {
             debug!("Dropping RadioRefGuard");
-            let rc = RADIO_REFCOUNT.borrow(cs);
 
-            let prev = rc.get();
-            rc.set(prev - 1);
-
-            if prev == 1 {
-                // Last user dropped, run de-initialization
+            *rc -= 1;
+            if *rc == 0 {
                 deinit();
             }
-        });
+        })
     }
 }
 
@@ -368,62 +401,14 @@ fn is_interrupts_disabled() -> bool {
 
     #[cfg(target_arch = "riscv32")]
     return !hal::riscv::register::mstatus::read().mie()
-        || hal::interrupt::current_runlevel() >= hal::interrupt::Priority::Priority1;
-}
-
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// Error which can be returned during radio initialization.
-#[non_exhaustive]
-pub enum InitializationError {
-    /// An error from the Wi-Fi driver.
-    #[cfg(feature = "wifi")]
-    WifiError(WifiError),
-    /// The current CPU clock frequency is too low.
-    WrongClockConfig,
-    /// The scheduler is not initialized.
-    SchedulerNotInitialized,
-    #[cfg(esp32)]
-    /// ADC2 is required by esp-radio, but it is in use by esp-hal.
-    Adc2IsUsed,
-}
-
-impl core::error::Error for InitializationError {}
-
-impl core::fmt::Display for InitializationError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            #[cfg(feature = "wifi")]
-            InitializationError::WifiError(e) => {
-                write!(f, "Wi-Fi driver related error occurred: {e}")
-            }
-            InitializationError::WrongClockConfig => {
-                write!(f, "The current CPU clock frequency is too low")
-            }
-            InitializationError::SchedulerNotInitialized => {
-                write!(f, "The scheduler is not initialized")
-            }
-            #[cfg(esp32)]
-            InitializationError::Adc2IsUsed => write!(
-                f,
-                "ADC2 cannot be used with `radio` functionality on `esp32`"
-            ),
-        }
-    }
-}
-
-#[cfg(feature = "wifi")]
-impl From<WifiError> for InitializationError {
-    fn from(value: WifiError) -> Self {
-        InitializationError::WifiError(value)
-    }
+        || !hal::interrupt::RunLevel::current().is_thread();
 }
 
 /// Enable verbose logging within the Wi-Fi driver
-/// Does nothing unless the `sys-logs` feature is enabled.
+/// Does nothing unless the `print-logs-from-driver` feature is enabled.
 #[instability::unstable]
 pub fn wifi_set_log_verbose() {
-    #[cfg(all(feature = "sys-logs", not(esp32h2)))]
+    #[cfg(all(feature = "print-logs-from-driver", not(esp32h2)))]
     unsafe {
         use crate::sys::include::{
             esp_wifi_internal_set_log_level,
@@ -462,4 +447,35 @@ pub fn set_phy_calibration_data(data: &[u8; core::mem::size_of::<esp_phy_calibra
 #[instability::unstable]
 pub fn last_calibration_result() -> Option<CalibrationResult> {
     esp_phy::last_calibration_result()
+}
+
+mod private {
+    use super::Display;
+    #[cfg(feature = "wifi")]
+    use crate::wifi::WifiError;
+    #[derive(Display, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    /// Error which can be returned during radio initialization.
+    #[non_exhaustive]
+    pub enum InitializationError {
+        /// An error from the Wi-Fi driver: {0}.
+        #[cfg(feature = "wifi")]
+        WifiError(WifiError),
+        /// The current CPU clock frequency is too low.
+        WrongClockConfig,
+        /// The scheduler is not initialized.
+        SchedulerNotInitialized,
+        #[cfg(esp32)]
+        /// ADC2 is required by esp-radio, but it is in use by esp-hal.
+        Adc2IsUsed,
+    }
+
+    impl core::error::Error for InitializationError {}
+
+    #[cfg(feature = "wifi")]
+    impl From<WifiError> for InitializationError {
+        fn from(value: WifiError) -> Self {
+            InitializationError::WifiError(value)
+        }
+    }
 }

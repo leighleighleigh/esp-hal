@@ -55,15 +55,18 @@
 //! break the async API. We will need to expose a way to handle async events.
 
 use portable_atomic::{AtomicPtr, Ordering};
-use procmacros::ram;
 use strum::EnumCount;
 
-#[cfg(feature = "rt")]
-use crate::interrupt::{self, DEFAULT_INTERRUPT_HANDLER};
 use crate::{
     gpio::{AnyPin, GPIO_LOCK, GpioBank, InputPin, set_int_enable},
     interrupt::Priority,
     peripherals::{GPIO, Interrupt},
+    ram,
+};
+#[cfg(feature = "rt")]
+use crate::{
+    handler,
+    interrupt::{self, DEFAULT_INTERRUPT_HANDLER},
 };
 
 /// Convenience constant for `Option::None` pin
@@ -103,21 +106,23 @@ pub(crate) fn bind_default_interrupt_handler() {
     // The vector table doesn't contain a custom entry. Still, the
     // peripheral interrupt may already be bound to something else.
     for cpu in cores() {
-        if interrupt::bound_cpu_interrupt_for(cpu, Interrupt::GPIO).is_some() {
+        if interrupt::mapped_to(cpu, Interrupt::GPIO).is_some() {
             info!("Not using default GPIO interrupt handler: peripheral interrupt already in use");
             return;
         }
     }
 
-    unsafe {
-        interrupt::bind_interrupt(
-            Interrupt::GPIO,
-            interrupt::IsrCallback::new(default_gpio_interrupt_handler),
-        )
-    };
+    interrupt::bind_handler(Interrupt::GPIO, default_gpio_interrupt_handler);
 
-    // By default, we use lowest priority
-    set_interrupt_priority(Interrupt::GPIO, Priority::min());
+    // On ESP32, there are separate interrupt status registers for each core, we need to enable the
+    // interrupt handler on each core otherwise GPIOs listening on the App CPU will not receive
+    // interrupts.
+    #[cfg(esp32)]
+    crate::interrupt::enable_on_cpu(
+        crate::system::Cpu::AppCpu,
+        Interrupt::GPIO,
+        Priority::Priority1,
+    );
 }
 
 cfg_if::cfg_if! {
@@ -133,9 +138,14 @@ cfg_if::cfg_if! {
     }
 }
 
+/// Configures the given peripheral interrupt to trigger the vectored handler of given priority.
 pub(super) fn set_interrupt_priority(interrupt: Interrupt, priority: Priority) {
     for cpu in cores() {
-        unwrap!(crate::interrupt::enable_on_cpu(cpu, interrupt, priority));
+        // Only change priority if the interrupt is mapped to the core, otherwise we would enable
+        // the interrupt unconditionally, which we don't want to do.
+        if crate::interrupt::mapped_to(cpu, interrupt).is_some() {
+            crate::interrupt::enable_on_cpu(cpu, interrupt, priority);
+        }
     }
 }
 
@@ -145,8 +155,9 @@ pub(super) fn set_interrupt_priority(interrupt: Interrupt, priority: Priority) {
 /// status bits unchanged. This enables functions like `is_interrupt_set` to
 /// work correctly.
 #[ram]
+#[handler]
 #[cfg(feature = "rt")]
-extern "C" fn default_gpio_interrupt_handler() {
+fn default_gpio_interrupt_handler() {
     GPIO_LOCK.lock(|| {
         let banks = interrupt_status();
 
@@ -188,7 +199,7 @@ pub(super) extern "C" fn user_gpio_interrupt_handler() {
 
         // Call the user handler before clearing interrupts. The user can use the enable
         // bits to determine which interrupts they are interested in. Clearing the
-        // interupt status or enable bits have no effect on the rest of the
+        // interrupt status or enable bits have no effect on the rest of the
         // interrupt handler.
         USER_INTERRUPT_HANDLER.call();
 
@@ -220,13 +231,10 @@ impl InterruptStatusRegisterAccess {
                     Self::Bank0 => GPIO::regs().status().read().bits(),
                     Self::Bank1 => GPIO::regs().status1().read().bits(),
                 }
-            } else if #[cfg(any(esp32c2, esp32c3, esp32c6, esp32h2))] {
-                GPIO::regs().pcpu_int().read().bits()
-            } else if #[cfg(any(esp32s2, esp32s3))] {
-                // Whilst the S3 is a dual core chip, it shares the enable registers between
-                // cores so treat it as a single core device
+            } else {
                 match self {
                     Self::Bank0 => GPIO::regs().pcpu_int().read().bits(),
+                    #[cfg(gpio_has_bank_1)]
                     Self::Bank1 => GPIO::regs().pcpu_int1().read().bits(),
                 }
             }

@@ -1,6 +1,9 @@
-use core::cell::{RefCell, RefMut};
 #[cfg(feature = "esp-radio")]
-use core::{ffi::c_void, ptr::NonNull};
+use core::ffi::c_void;
+use core::{
+    cell::{RefCell, RefMut},
+    ptr::NonNull,
+};
 
 #[cfg(feature = "alloc")]
 use allocator_api2::boxed::Box;
@@ -16,9 +19,10 @@ use crate::TraceEvents;
 #[cfg(feature = "embassy")]
 use crate::timer::embassy::TimerQueue;
 use crate::{
-    run_queue::{Priority, RunQueue, RunSchedulerOn},
+    run_queue::{Priority, RunQueue},
     task::{
         self,
+        ContextExt,
         CpuContext,
         IdleFn,
         Task,
@@ -30,6 +34,7 @@ use crate::{
         TaskPtr,
         TaskState,
         ThreadLocalData,
+        read_thread_pointer,
     },
     timer::TimeDriver,
 };
@@ -46,14 +51,19 @@ pub(crate) struct SchedulerState {
 
     pub(crate) time_driver: Option<TimeDriver>,
 
-    pub(crate) per_cpu: [CpuSchedulerState; Cpu::COUNT],
+    pub(crate) per_cpu: [CpuState; Cpu::COUNT],
 }
 
-pub(crate) struct CpuSchedulerState {
+pub(crate) struct CpuState {
     pub(crate) initialized: bool,
-    /// Pointer to the current task.
-    pub(crate) current_task: Option<TaskPtr>,
     idle_context: CpuContext,
+
+    /// A pointer to the current task.
+    ///
+    /// While the task pointer is available through the thread pointer register,
+    /// sometimes we need to check the other core's task pointer, so we need a copy in memory.
+    #[cfg(multi_core)]
+    current_task: *mut Task,
 
     // This context will be filled out by the first context switch.
     // We allocate the main task statically, because there is always a main task. If deleted, we
@@ -61,12 +71,14 @@ pub(crate) struct CpuSchedulerState {
     pub(crate) main_task: Task,
 }
 
-impl CpuSchedulerState {
+impl CpuState {
     const fn new() -> Self {
         Self {
             initialized: false,
-            current_task: None,
             idle_context: CpuContext::new(),
+
+            #[cfg(multi_core)]
+            current_task: core::ptr::null_mut(),
 
             main_task: Task {
                 cpu_context: CpuContext::new(),
@@ -97,13 +109,6 @@ impl CpuSchedulerState {
             },
         }
     }
-
-    #[cfg(multi_core)]
-    pub fn current_priority(&self) -> Priority {
-        self.current_task
-            .map(|task| unsafe { (*task.as_ptr()).priority })
-            .unwrap_or(Priority::ZERO)
-    }
 }
 
 unsafe impl Send for SchedulerState {}
@@ -117,15 +122,28 @@ impl SchedulerState {
 
             time_driver: None,
 
-            per_cpu: [const { CpuSchedulerState::new() }; Cpu::COUNT],
+            per_cpu: [const { CpuState::new() }; Cpu::COUNT],
         }
     }
 
-    pub(crate) fn current_task(&self, cpu: Cpu) -> TaskPtr {
-        unwrap!(
-            self.per_cpu[cpu as usize].current_task,
-            "The scheduler is not running on the current CPU. Make sure you start the scheduler before calling OS functions."
-        )
+    #[cfg(multi_core)]
+    pub(crate) fn priority_of_core(per_cpu: &[CpuState], core: usize) -> Priority {
+        unsafe { per_cpu[core].current_task.as_ref() }
+            .map(|task| task.priority)
+            .unwrap_or(Priority::ZERO)
+    }
+
+    #[inline]
+    #[cfg(multi_core)]
+    pub(crate) fn set_current_task(&mut self, cpu: Cpu, task: Option<TaskPtr>) {
+        self.per_cpu[cpu as usize].current_task =
+            task.map(|task| task.as_ptr()).unwrap_or_default();
+    }
+
+    #[inline]
+    #[cfg(multi_core)]
+    pub(crate) fn try_get_current_task(&self, cpu: Cpu) -> Option<TaskPtr> {
+        NonNull::new(self.per_cpu[cpu as usize].current_task)
     }
 
     pub(crate) fn setup(&mut self, time_driver: TimeDriver, idle_hook: IdleFn) {
@@ -161,18 +179,21 @@ impl SchedulerState {
             InternalMemory,
         );
         task.heap_allocated = true;
-        let task_ptr = NonNull::from(Box::leak(task));
+        let mut task_ptr = NonNull::from(Box::leak(task));
+
+        unsafe {
+            task_ptr
+                .as_mut()
+                .cpu_context
+                .set_tp(task_ptr.as_ptr() as u32)
+        };
 
         #[cfg(feature = "rtos-trace")]
         rtos_trace::trace::task_new(task_ptr.rtos_trace_id());
 
         self.all_tasks.push(task_ptr);
-        match self.run_queue.mark_task_ready(&self.per_cpu, task_ptr) {
-            RunSchedulerOn::DontRun => {}
-            RunSchedulerOn::CurrentCore => task::yield_task(),
-            #[cfg(multi_core)]
-            RunSchedulerOn::OtherCore => task::schedule_other_core(),
-        }
+        let run_scheduler = self.run_queue.mark_task_ready(&self.per_cpu, task_ptr);
+        task::trigger_scheduler(run_scheduler);
 
         debug!("Task '{}' created: {:?}", name, task_ptr);
 
@@ -181,17 +202,20 @@ impl SchedulerState {
 
     #[cold]
     #[inline(never)]
-    fn delete_marked_tasks(&mut self, cpu: Cpu) {
-        let current_cpu = cpu as usize;
+    fn delete_marked_tasks(&mut self) {
         let mut to_delete = core::mem::take(&mut self.to_delete);
-        'outer: while let Some(task_ptr) = to_delete.pop() {
+
+        while let Some(task_ptr) = to_delete.pop() {
             assert!(task_ptr.state() == TaskState::Deleted);
-            for cpu in 0..Cpu::COUNT {
-                if cpu != current_cpu && Some(task_ptr) == self.per_cpu[cpu].current_task {
-                    // We can't delete a task that is currently running on another CPU.
-                    self.to_delete.push(task_ptr);
-                    continue 'outer;
-                }
+
+            #[cfg(multi_core)]
+            if Cpu::other()
+                .filter_map(|cpu| self.try_get_current_task(cpu))
+                .any(|task| task == task_ptr)
+            {
+                // We can't delete a task that is currently running on another CPU.
+                self.to_delete.push(task_ptr);
+                continue;
             }
 
             trace!("delete_marked_tasks {:?}", task_ptr);
@@ -203,14 +227,14 @@ impl SchedulerState {
         #[cfg(feature = "rtos-trace")]
         rtos_trace::trace::marker_begin(TraceEvents::RunSchedule as u32);
 
+        if !self.to_delete.is_empty() {
+            self.delete_marked_tasks();
+        }
+
         let cpu = Cpu::current();
         let current_cpu = cpu as usize;
 
-        if !self.to_delete.is_empty() {
-            self.delete_marked_tasks(cpu);
-        }
-
-        let current_task = self.per_cpu[current_cpu].current_task;
+        let current_task = NonNull::new(read_thread_pointer());
         if let Some(current_task) = current_task {
             unsafe { current_task.as_ref().ensure_no_stack_overflow() };
 
@@ -239,7 +263,8 @@ impl SchedulerState {
                 let current_ref = unsafe { current.as_ref() };
                 #[cfg(multi_core)]
                 if current_ref.pinned_to.is_none()
-                    && current_ref.priority >= self.per_cpu[1 - current_cpu].current_priority()
+                    && current_ref.priority
+                        >= Self::priority_of_core(&self.per_cpu, 1 - current_cpu)
                 {
                     task::schedule_other_core();
                 }
@@ -267,8 +292,8 @@ impl SchedulerState {
                 // be pinned to the current CPU. If we're switching out the main task, however, we
                 // can't rely on its saved context - use the current stack pointer which will still
                 // point to the right stack, just to another place we can use within it.
-                let idle_sp = if current_context.is_null()
-                    || current_context == &raw mut self.per_cpu[current_cpu].main_task.cpu_context
+                let idle_sp = if current_context
+                    == &raw mut self.per_cpu[current_cpu].main_task.cpu_context
                 {
                     // We're using the current task's stack, for which the watchpoint is already set
                     // up.
@@ -288,22 +313,10 @@ impl SchedulerState {
                         .main_task
                         .set_up_stack_watchpoint();
 
-                    cfg_if::cfg_if! {
-                        if #[cfg(xtensa)] {
-                            self.per_cpu[current_cpu].main_task.cpu_context.A1
-                        } else {
-                            self.per_cpu[current_cpu].main_task.cpu_context.sp
-                        }
-                    }
+                    self.per_cpu[current_cpu].main_task.cpu_context.sp()
                 };
 
-                cfg_if::cfg_if! {
-                    if #[cfg(xtensa)] {
-                        self.per_cpu[current_cpu].idle_context.A1 = idle_sp;
-                    } else {
-                        self.per_cpu[current_cpu].idle_context.sp = idle_sp;
-                    }
-                }
+                self.per_cpu[current_cpu].idle_context.set_sp(idle_sp);
 
                 #[cfg(feature = "rtos-trace")]
                 rtos_trace::trace::system_idle();
@@ -314,7 +327,8 @@ impl SchedulerState {
             task_switch(current_context, next_context);
 
             // If we went to idle, this will be None and we won't mess up the main task's stack.
-            self.per_cpu[current_cpu].current_task = next_task;
+            #[cfg(multi_core)]
+            self.set_current_task(cpu, next_task);
         }
 
         let time_driver = unwrap!(self.time_driver.as_mut());
@@ -343,8 +357,7 @@ impl SchedulerState {
 
     #[cfg(feature = "esp-radio")]
     pub(crate) fn schedule_task_deletion(&mut self, task_to_delete: Option<TaskPtr>) -> bool {
-        let current_cpu = Cpu::current() as usize;
-        let current_task = unwrap!(self.per_cpu[current_cpu].current_task);
+        let current_task = SCHEDULER.current_task();
         let task_to_delete = task_to_delete.unwrap_or(current_task);
         let is_current = task_to_delete == current_task;
 
@@ -356,7 +369,7 @@ impl SchedulerState {
                 task_to_delete.set_state(TaskState::Deleted);
             }
 
-            self.per_cpu[current_cpu].current_task = None;
+            crate::task::write_thread_pointer(core::ptr::null_mut());
         } else {
             self.delete_task(task_to_delete);
         }
@@ -374,12 +387,8 @@ impl SchedulerState {
         let timer_queue = unwrap!(self.time_driver.as_mut());
         timer_queue.timer_queue.remove(task);
 
-        match self.run_queue.mark_task_ready(&self.per_cpu, task) {
-            RunSchedulerOn::DontRun => {}
-            RunSchedulerOn::CurrentCore => task::yield_task(),
-            #[cfg(multi_core)]
-            RunSchedulerOn::OtherCore => task::schedule_other_core(),
-        }
+        let run_scheduler = self.run_queue.mark_task_ready(&self.per_cpu, task);
+        task::trigger_scheduler(run_scheduler);
     }
 
     fn delete_task(&mut self, mut to_delete: TaskPtr) {
@@ -487,9 +496,13 @@ impl Scheduler {
         self.inner.lock(cb)
     }
 
-    #[cfg(feature = "esp-radio")]
     pub(crate) fn current_task(&self) -> TaskPtr {
-        task::current_task()
+        let tp = read_thread_pointer();
+
+        unwrap!(
+            TaskPtr::new(tp),
+            "The scheduler has not been started. Make sure to call `esp_rtos::init()` before trying to access the current task."
+        )
     }
 
     #[cfg(feature = "esp-radio")]
@@ -516,7 +529,7 @@ impl Scheduler {
 
     pub(crate) fn sleep_until(&self, wake_at: Instant) -> bool {
         self.with(|scheduler| {
-            let current_task = scheduler.current_task(Cpu::current());
+            let current_task = SCHEDULER.current_task();
             if scheduler.sleep_task_until(current_task, wake_at) {
                 task::yield_task();
                 true

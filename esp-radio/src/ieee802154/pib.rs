@@ -24,7 +24,8 @@ const IEEE802154_MULTIPAN_0: u8 = 0;
 const IEEE802154_MULTIPAN_MAX: usize = 4;
 
 /// Frame pending mode
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PendingMode {
     /// Frame pending bit always set to 1 in the ack to Data Request
     #[default]
@@ -40,7 +41,8 @@ pub enum PendingMode {
 }
 
 /// CCA mode
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CcaMode {
     /// Carrier only
     #[default]
@@ -99,7 +101,7 @@ pub(crate) fn ieee802154_pib_init() {
             coordinator: false,
             promiscuous: true,
             rx_when_idle: false,
-            txpower: 10,
+            txpower: 20,
             channel: 11,
             pending_mode: PendingMode::Disable,
             multipan_mask: 1 << IEEE802154_MULTIPAN_0,
@@ -225,7 +227,7 @@ fn ieee802154_txpower_convert(txpower: i8) -> u8 {
             const IEEE802154_TXPOWER_INDEX_MIN: i8 = 3;
         }
     }
-    if txpower > IEEE802154_TXPOWER_VALUE_MAX {
+    if txpower >= IEEE802154_TXPOWER_VALUE_MAX {
         15
     } else if txpower <= IEEE802154_TXPOWER_VALUE_MIN {
         IEEE802154_TXPOWER_INDEX_MIN as u8

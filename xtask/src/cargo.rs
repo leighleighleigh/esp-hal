@@ -61,6 +61,8 @@ where
 
     let mut command = Command::new(get_cargo());
 
+    let ci = std::env::var("CI").is_ok();
+
     command
         .args(args)
         .current_dir(cwd)
@@ -70,7 +72,7 @@ where
         } else {
             Stdio::inherit()
         })
-        .stderr(if capture {
+        .stderr(if capture || ci {
             Stdio::piped()
         } else {
             Stdio::inherit()
@@ -81,20 +83,39 @@ where
         command.env_remove("CARGO");
     }
 
-    let output = command
-        .stdin(Stdio::inherit())
-        .output()
-        .with_context(|| format!("Couldn't get output for command {command:?}"))?;
+    // retrying - remove once we don't need this anymore
+    let mut retries = 50;
+    loop {
+        let output = command
+            .stdin(Stdio::inherit())
+            .output()
+            .with_context(|| format!("Couldn't get output for command {command:?}"))?;
 
-    // Make sure that we return an appropriate exit code here, as Github Actions
-    // requires this in order to function correctly:
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        bail!(
-            "Failed to execute cargo subcommand `cargo {}`",
-            args.join(" "),
-        )
+        // Make sure that we return an appropriate exit code here, as Github Actions
+        // requires this in order to function correctly:
+        if output.status.success() {
+            break Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        } else {
+            if ci {
+                let err_out = String::from_utf8_lossy(&output.stderr).to_string();
+                if !capture {
+                    eprintln!("{}", err_out);
+                }
+                if err_out.contains("SIGSEGV") {
+                    if !capture {
+                        eprintln!("Retry build ({retries})");
+                    }
+                    retries -= 1;
+                    if retries > 0 {
+                        continue;
+                    }
+                }
+            }
+            bail!(
+                "Failed to execute cargo subcommand `cargo {}`",
+                args.join(" "),
+            )
+        }
     }
 }
 
@@ -714,18 +735,20 @@ impl CargoToml {
             match &mut table[&package_name] {
                 Item::Value(Value::String(table)) => {
                     // package = "version"
-                    *table = Formatted::new(version.to_string());
+                    *table = Formatted::new(format_dependency_version(table.value(), version));
                     changed = true;
                 }
                 Item::Table(table) if table.contains_key("version") => {
                     // [package]
                     // version = "version"
-                    table["version"] = toml_edit::value(version.to_string());
+                    let old = table["version"].as_str().unwrap_or_default();
+                    table["version"] = toml_edit::value(format_dependency_version(old, version));
                     changed = true;
                 }
                 Item::Value(Value::InlineTable(table)) if table.contains_key("version") => {
                     // package = { version = "version" }
-                    table["version"] = version.to_string().into();
+                    let old = table["version"].as_str().unwrap_or_default();
+                    table["version"] = format_dependency_version(old, version).into();
                     changed = true;
                 }
                 Item::None => {
@@ -746,7 +769,11 @@ impl CargoToml {
                     });
 
                     if let Some(dependency_name) = update_renamed_dep {
-                        table[&dependency_name]["version"] = version.to_string().into();
+                        let old = table[&dependency_name]["version"]
+                            .as_str()
+                            .unwrap_or_default();
+                        table[&dependency_name]["version"] =
+                            format_dependency_version(old, version).into();
                         changed = true;
                     }
                 }
@@ -758,9 +785,85 @@ impl CargoToml {
     }
 }
 
+fn format_dependency_version(previous: &str, new: &semver::Version) -> String {
+    // we can expect the version specified in a TOML to be valid
+    let previous = semver::VersionReq::parse(previous).unwrap();
+    let comp = &previous.comparators[0];
+
+    if previous.comparators.len() > 1 {
+        log::info!(
+            "We don't support more complex version specifiers. ({:?}). Just using the new version as is.",
+            previous
+        );
+    }
+
+    fn format_version_string(
+        comp: &semver::Comparator,
+        new: &semver::Version,
+        prefix: &str,
+    ) -> String {
+        if comp.patch.is_some() {
+            format!("{}{}.{}.{}", prefix, new.major, new.minor, new.patch)
+        } else if comp.minor.is_some() {
+            format!("{}{}.{}", prefix, new.major, new.minor)
+        } else {
+            format!("{}{}", prefix, new.major)
+        }
+    }
+    eprintln!("{:?}", comp);
+    if comp.op == semver::Op::Tilde {
+        format_version_string(comp, new, "~")
+    } else if comp.op == semver::Op::Exact {
+        eprintln!("here");
+        format_version_string(comp, new, "=")
+    } else if comp.op == semver::Op::Caret {
+        eprintln!("here");
+        format_version_string(comp, new, "")
+    } else {
+        log::info!(
+            "We don't support comparators other than ~, = and ^ (default). ({:?}). Just using the new version as is.",
+            previous
+        );
+        new.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_format_dependency_version() {
+        assert_eq!(
+            format_dependency_version("0.1.0", &semver::Version::parse("0.2.0").unwrap()),
+            "0.2.0"
+        );
+
+        assert_eq!(
+            format_dependency_version("^0.1.0", &semver::Version::parse("0.2.0").unwrap()),
+            "0.2.0"
+        );
+
+        assert_eq!(
+            format_dependency_version("~1.0", &semver::Version::parse("1.2.3").unwrap()),
+            "~1.2"
+        );
+
+        assert_eq!(
+            format_dependency_version("~1", &semver::Version::parse("2.5.1").unwrap()),
+            "~2"
+        );
+
+        assert_eq!(
+            format_dependency_version("=1.1.5", &semver::Version::parse("1.1.8").unwrap()),
+            "=1.1.8"
+        );
+
+        assert_eq!(
+            format_dependency_version("=1.1.5", &semver::Version::parse("1.8.3").unwrap()),
+            "=1.8.3"
+        );
+    }
 
     #[test]
     fn test_bump_version() {

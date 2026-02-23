@@ -49,7 +49,7 @@ unsafe extern "C" fn __esp_phy_exit_critical(level: u32) {
 /// Name: esp_dport_access_reg_read
 ///
 /// Description:
-///   Read regitser value safely in SMP
+///   Read register value safely in SMP
 ///
 /// Input Parameters:
 ///   reg - Register address
@@ -70,8 +70,5 @@ unsafe extern "C" fn __esp_phy_esp_dport_access_reg_read(reg: u32) -> u32 {
 #[ram]
 #[unsafe(no_mangle)]
 unsafe extern "C" fn __esp_phy_rtc_get_xtal() -> u32 {
-    use esp_hal::clock::Clock;
-
-    let xtal = esp_hal::clock::RtcClock::xtal_freq();
-    xtal.mhz()
+    esp_hal::clock::Clocks::get().xtal_clock.as_mhz()
 }

@@ -4,11 +4,13 @@
 // The S3 dev kit in the HIL-tester has octal PSRAM.
 //% CHIPS(octal): esp32s3
 // ESP32 has no AES-DMA, no point in setting up PSRAM
-//% CHIPS(no_psram): esp32 esp32c3 esp32c6 esp32h2
+//% CHIPS(no_psram): esp32 esp32c3 esp32c5 esp32c6 esp32h2
 
 //% ENV(octal): ESP_HAL_CONFIG_PSRAM_MODE=octal
 //% FEATURES(quad, octal): psram
 //% FEATURES: unstable esp-alloc/nightly
+
+// TODO: PSRAM tests for C5
 
 #![no_std]
 #![no_main]

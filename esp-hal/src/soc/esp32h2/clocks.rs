@@ -14,14 +14,13 @@
 // TODO: This is a temporary place for this, should probably be moved into clocks_ll.
 
 use crate::{
-    peripherals::{I2C_ANA_MST, LP_AON, LP_CLKRST, MODEM_LPCON, PCR, PMU, TIMG0, TIMG1},
+    peripherals::{I2C_ANA_MST, LP_CLKRST, MODEM_LPCON, PCR, PMU, TIMG0, TIMG1},
     soc::regi2c,
 };
 
 define_clock_tree_types!();
 
-// TODO: this should replace the current CpuClock enum. CpuClock is a bit of a misleading
-// name as this will configure multiple things.
+/// Clock configuration options.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(
@@ -29,33 +28,52 @@ define_clock_tree_types!();
     reason = "MHz suffix indicates physical unit."
 )]
 #[non_exhaustive]
-pub(crate) enum CpuClock {
+pub enum CpuClock {
+    /// 96 MHz CPU clock
     #[default]
-    _96MHz,
-    Custom(ClockConfig),
+    _96MHz = 96,
 }
 
 impl CpuClock {
-    pub(crate) fn configure(self) {
-        // Resolve presets
-        let mut config = match self {
-            CpuClock::_96MHz => ClockConfig {
-                xtal_clk: None,
-                hp_root_clk: Some(HpRootClkConfig::Pll96),
-                cpu_clk: Some(CpuClkConfig::new(0)),
-                ahb_clk: Some(AhbClkConfig::new(0)),
-                apb_clk: Some(ApbClkConfig::new(0)),
-                lp_fast_clk: Some(LpFastClkConfig::RcFastClk),
-                lp_slow_clk: Some(LpSlowClkConfig::RcSlow),
-            },
-            CpuClock::Custom(clock_config) => clock_config,
-        };
+    const PRESET_96: ClockConfig = ClockConfig {
+        xtal_clk: None,
+        hp_root_clk: Some(HpRootClkConfig::Pll96),
+        cpu_clk: Some(CpuClkConfig::new(0)),
+        ahb_clk: Some(AhbClkConfig::new(0)),
+        apb_clk: Some(ApbClkConfig::new(0)),
+        lp_fast_clk: Some(LpFastClkConfig::RcFastClk),
+        lp_slow_clk: Some(LpSlowClkConfig::RcSlow),
+    };
+}
 
-        if config.xtal_clk.is_none() {
-            config.xtal_clk = Some(XtalClkConfig::_32);
+impl From<CpuClock> for ClockConfig {
+    fn from(value: CpuClock) -> ClockConfig {
+        match value {
+            CpuClock::_96MHz => CpuClock::PRESET_96,
+        }
+    }
+}
+
+impl Default for ClockConfig {
+    fn default() -> Self {
+        Self::from(CpuClock::default())
+    }
+}
+
+impl ClockConfig {
+    pub(crate) fn try_get_preset(self) -> Option<CpuClock> {
+        match self {
+            v if v == CpuClock::PRESET_96 => Some(CpuClock::_96MHz),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn configure(mut self) {
+        if self.xtal_clk.is_none() {
+            self.xtal_clk = Some(XtalClkConfig::_32);
         }
 
-        config.apply();
+        self.apply();
     }
 }
 
@@ -75,23 +93,8 @@ fn clk_ll_bus_update() {
 
 // XTAL_CLK
 
-fn configure_xtal_clk_impl(_clocks: &mut ClockTree, config: XtalClkConfig) {
-    // The stored configuration affects PLL settings instead. We save the value in a register
-    // similar to ESP-IDF, just in case something relies on that, or, if we can in the future read
-    // back the value instead of wasting RAM on it.
-
-    const DISABLE_ROM_LOG: u32 = 1;
-
-    let freq_mhz = config.value() / 1_000_000;
-    LP_AON::regs().store4().modify(|r, w| unsafe {
-        // The data is stored in two copies of 16-bit values. The first bit overwrites the LSB of
-        // the frequency value with DISABLE_ROM_LOG.
-
-        // Copy the DISABLE_ROM_LOG bit
-        let disable_rom_log_bit = r.bits() & DISABLE_ROM_LOG;
-        let half = (freq_mhz & (0xFFFF & !DISABLE_ROM_LOG)) | disable_rom_log_bit;
-        w.data().bits(half | (half << 16))
-    });
+fn configure_xtal_clk_impl(_clocks: &mut ClockTree, _config: XtalClkConfig) {
+    // The stored configuration affects PLL settings instead.
 }
 
 // PLL_F96M_CLK
@@ -188,6 +191,7 @@ fn enable_xtal32k_clk_impl(_clocks: &mut ClockTree, en: bool) {
     PMU::regs()
         .hp_sleep_lp_ck_power()
         .modify(|_, w| w.hp_sleep_xpd_xtal32k().bit(en));
+
     // Enable for digital part
     LP_CLKRST::regs()
         .clk_to_hp()
@@ -203,9 +207,17 @@ fn enable_osc_slow_clk_impl(_clocks: &mut ClockTree, _en: bool) {
 // RC_SLOW_CLK
 
 fn enable_rc_slow_clk_impl(_clocks: &mut ClockTree, en: bool) {
+    if en {
+        // SCK_DCAP value controls tuning of 136k clock. The higher the value of DCAP, the lower the
+        // frequency. There is no separate enable bit, just make sure the calibration value is set.
+        const RTC_CNTL_SCK_DCAP_DEFAULT: u8 = 85;
+        crate::soc::regi2c::I2C_PMU_OC_SCK_DCAP.write_reg(RTC_CNTL_SCK_DCAP_DEFAULT);
+    }
+
     PMU::regs()
         .hp_sleep_lp_ck_power()
         .modify(|_, w| w.hp_sleep_xpd_rc32k().bit(en));
+
     // Enable for digital part
     LP_CLKRST::regs()
         .clk_to_hp()
@@ -329,8 +341,30 @@ fn configure_lp_slow_clk_impl(
     LP_CLKRST::regs().lp_clk_conf().modify(|_, w| unsafe {
         w.slow_clk_sel().bits(match new_selector {
             LpSlowClkConfig::RcSlow => 0,
-            LpSlowClkConfig::Xtal32kClk => 1,
+            LpSlowClkConfig::Xtal32k => 1,
             LpSlowClkConfig::OscSlow => 2,
+        })
+    });
+}
+
+// MCPWM0_FUNCTION_CLOCK
+
+fn enable_mcpwm0_function_clock_impl(_clocks: &mut ClockTree, en: bool) {
+    PCR::regs()
+        .pwm_clk_conf()
+        .modify(|_, w| w.pwm_clkm_en().bit(en));
+}
+
+fn configure_mcpwm0_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Mcpwm0FunctionClockConfig>,
+    new_selector: Mcpwm0FunctionClockConfig,
+) {
+    PCR::regs().pwm_clk_conf().modify(|_, w| unsafe {
+        w.pwm_clkm_sel().bits(match new_selector {
+            Mcpwm0FunctionClockConfig::XtalClk => 0,
+            Mcpwm0FunctionClockConfig::RcFastClk => 1,
+            Mcpwm0FunctionClockConfig::PllF96m => 2,
         })
     });
 }
@@ -374,9 +408,98 @@ fn configure_timg0_calibration_clock_impl(
 ) {
     TIMG0::regs().rtccalicfg().modify(|_, w| unsafe {
         w.rtc_cali_clk_sel().bits(match new_selector {
-            Timg0CalibrationClockConfig::RtcSlowClk => 0,
-            Timg0CalibrationClockConfig::RcFastClk => 1,
+            Timg0CalibrationClockConfig::RcSlowClk => 0,
+            Timg0CalibrationClockConfig::RcFastDivClk => 1,
             Timg0CalibrationClockConfig::Xtal32kClk => 2,
+        })
+    });
+}
+
+// TIMG0_WDT_CLOCK
+
+fn enable_timg0_wdt_clock_impl(_clocks: &mut ClockTree, en: bool) {
+    PCR::regs()
+        .timergroup0_wdt_clk_conf()
+        .modify(|_, w| w.tg0_wdt_clk_en().bit(en));
+}
+
+fn configure_timg0_wdt_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Timg0WdtClockConfig>,
+    new_selector: Timg0WdtClockConfig,
+) {
+    PCR::regs()
+        .timergroup0_wdt_clk_conf()
+        .modify(|_, w| unsafe {
+            w.tg0_wdt_clk_sel().bits(match new_selector {
+                Timg0WdtClockConfig::XtalClk => 0,
+                Timg0WdtClockConfig::RcFastClk => 1,
+                Timg0WdtClockConfig::PllF48m => 2,
+            })
+        });
+}
+
+// PARLIO_RX_CLOCK
+
+fn enable_parlio_rx_clock_impl(_clocks: &mut ClockTree, en: bool) {
+    PCR::regs()
+        .parl_clk_rx_conf()
+        .modify(|_, w| w.parl_clk_rx_en().bit(en));
+}
+
+fn configure_parlio_rx_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<ParlioRxClockConfig>,
+    new_selector: ParlioRxClockConfig,
+) {
+    PCR::regs().parl_clk_rx_conf().modify(|_, w| unsafe {
+        w.parl_clk_rx_sel().bits(match new_selector {
+            ParlioRxClockConfig::XtalClk => 0,
+            ParlioRxClockConfig::RcFastClk => 2,
+            ParlioRxClockConfig::PllF96m => 1,
+        })
+    });
+}
+
+// PARLIO_TX_CLOCK
+
+fn enable_parlio_tx_clock_impl(_clocks: &mut ClockTree, en: bool) {
+    PCR::regs()
+        .parl_clk_tx_conf()
+        .modify(|_, w| w.parl_clk_tx_en().bit(en));
+}
+
+fn configure_parlio_tx_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<ParlioTxClockConfig>,
+    new_selector: ParlioTxClockConfig,
+) {
+    PCR::regs().parl_clk_tx_conf().modify(|_, w| unsafe {
+        w.parl_clk_tx_sel().bits(match new_selector {
+            ParlioTxClockConfig::XtalClk => 0,
+            ParlioTxClockConfig::RcFastClk => 2,
+            ParlioTxClockConfig::PllF96m => 1,
+        })
+    });
+}
+
+// RMT_SCLK
+
+fn enable_rmt_sclk_impl(_clocks: &mut ClockTree, en: bool) {
+    PCR::regs()
+        .rmt_sclk_conf()
+        .modify(|_, w| w.sclk_en().bit(en));
+}
+
+fn configure_rmt_sclk_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<RmtSclkConfig>,
+    new_selector: RmtSclkConfig,
+) {
+    PCR::regs().rmt_sclk_conf().modify(|_, w| {
+        w.sclk_sel().bit(match new_selector {
+            RmtSclkConfig::XtalClk => false,
+            RmtSclkConfig::RcFastClk => true,
         })
     });
 }
@@ -420,9 +543,76 @@ fn configure_timg1_calibration_clock_impl(
 ) {
     TIMG1::regs().rtccalicfg().modify(|_, w| unsafe {
         w.rtc_cali_clk_sel().bits(match new_selector {
-            Timg0CalibrationClockConfig::RtcSlowClk => 0,
-            Timg0CalibrationClockConfig::RcFastClk => 1,
+            Timg0CalibrationClockConfig::RcSlowClk => 0,
+            Timg0CalibrationClockConfig::RcFastDivClk => 1,
             Timg0CalibrationClockConfig::Xtal32kClk => 2,
+        })
+    });
+}
+
+// TIMG1_WDT_CLOCK
+
+fn enable_timg1_wdt_clock_impl(_clocks: &mut ClockTree, en: bool) {
+    PCR::regs()
+        .timergroup1_wdt_clk_conf()
+        .modify(|_, w| w.tg1_wdt_clk_en().bit(en));
+}
+
+fn configure_timg1_wdt_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Timg0WdtClockConfig>,
+    new_selector: Timg0WdtClockConfig,
+) {
+    PCR::regs()
+        .timergroup1_wdt_clk_conf()
+        .modify(|_, w| unsafe {
+            w.tg1_wdt_clk_sel().bits(match new_selector {
+                Timg0WdtClockConfig::XtalClk => 0,
+                Timg0WdtClockConfig::RcFastClk => 1,
+                Timg0WdtClockConfig::PllF48m => 2,
+            })
+        });
+}
+
+// UART0_FUNCTION_CLOCK
+
+fn enable_uart0_function_clock_impl(_clocks: &mut ClockTree, _en: bool) {
+    // At least on revision 0.1 switching SCLK off causes the chip to no longer boot.
+}
+
+fn configure_uart0_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0FunctionClockConfig>,
+    new_selector: Uart0FunctionClockConfig,
+) {
+    PCR::regs().uart(0).clk_conf().modify(|_, w| unsafe {
+        w.sclk_sel().bits(match new_selector {
+            Uart0FunctionClockConfig::PllF48m => 1,
+            Uart0FunctionClockConfig::RcFast => 2,
+            Uart0FunctionClockConfig::Xtal => 3,
+        })
+    });
+}
+
+// UART1_FUNCTION_CLOCK
+
+fn enable_uart1_function_clock_impl(_clocks: &mut ClockTree, en: bool) {
+    PCR::regs()
+        .uart(1)
+        .clk_conf()
+        .modify(|_, w| w.sclk_en().bit(en));
+}
+
+fn configure_uart1_function_clock_impl(
+    _clocks: &mut ClockTree,
+    _old_selector: Option<Uart0FunctionClockConfig>,
+    new_selector: Uart0FunctionClockConfig,
+) {
+    PCR::regs().uart(1).clk_conf().modify(|_, w| unsafe {
+        w.sclk_sel().bits(match new_selector {
+            Uart0FunctionClockConfig::PllF48m => 1,
+            Uart0FunctionClockConfig::RcFast => 2,
+            Uart0FunctionClockConfig::Xtal => 3,
         })
     });
 }

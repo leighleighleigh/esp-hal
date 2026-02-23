@@ -27,11 +27,17 @@ use crate::InternalMemory;
 use crate::wait_queue::WaitQueue;
 use crate::{
     SCHEDULER,
-    run_queue::{Priority, RunQueue},
+    run_queue::{Priority, RunQueue, RunSchedulerOn},
     scheduler::SchedulerState,
 };
 
 pub type IdleFn = extern "C" fn() -> !;
+
+pub(crate) extern "C" fn idle_hook() -> ! {
+    loop {
+        esp_hal::interrupt::wait_for_interrupt();
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -384,6 +390,46 @@ pub(crate) struct Task {
     pub(crate) heap_allocated: bool,
 }
 
+pub(crate) trait ContextExt {
+    fn set_tp(&mut self, tp: u32);
+
+    fn sp(&self) -> u32;
+
+    fn set_sp(&mut self, sp: u32);
+}
+
+impl ContextExt for CpuContext {
+    fn set_tp(&mut self, tp: u32) {
+        cfg_if::cfg_if! {
+            if #[cfg(xtensa)] {
+                self.THREADPTR = tp;
+            } else if #[cfg(riscv)] {
+                self.tp = tp as usize;
+            }
+        }
+    }
+
+    fn sp(&self) -> u32 {
+        cfg_if::cfg_if! {
+            if #[cfg(xtensa)] {
+                self.A1
+            } else {
+                self.sp as u32
+            }
+        }
+    }
+
+    fn set_sp(&mut self, sp: u32) {
+        cfg_if::cfg_if! {
+            if #[cfg(xtensa)] {
+                self.A1 = sp;
+            } else {
+                self.sp = sp as usize;
+            }
+        }
+    }
+}
+
 #[cfg(feature = "esp-radio")]
 extern "C" fn task_wrapper(task_fn: extern "C" fn(*mut c_void), param: *mut c_void) {
     task_fn(param);
@@ -567,6 +613,14 @@ pub(super) fn allocate_main_task(
     // This is slightly questionable as we don't ensure SchedulerState is pinned, but it's always
     // part of a static object so taking the pointer is fine.
     let main_task_ptr = NonNull::from(&scheduler.per_cpu[current_cpu].main_task);
+
+    scheduler.per_cpu[current_cpu]
+        .main_task
+        .cpu_context
+        .set_tp(main_task_ptr.as_ptr() as u32);
+
+    write_thread_pointer(main_task_ptr.as_ptr());
+
     debug!("Main task created: {:?}", main_task_ptr);
 
     #[cfg(feature = "rtos-trace")]
@@ -574,23 +628,11 @@ pub(super) fn allocate_main_task(
 
     // The main task is already running, no need to add it to the ready queue.
     scheduler.all_tasks.push(main_task_ptr);
-    scheduler.per_cpu[current_cpu].current_task = Some(main_task_ptr);
+    #[cfg(multi_core)]
+    scheduler.set_current_task(cpu, Some(main_task_ptr));
     scheduler
         .run_queue
         .mark_task_ready(&scheduler.per_cpu, main_task_ptr);
-}
-
-pub(super) fn with_current_task<R>(mut cb: impl FnMut(&mut Task) -> R) -> R {
-    SCHEDULER.with(|state| {
-        cb(unsafe {
-            let current_cpu = Cpu::current() as usize;
-            unwrap!(state.per_cpu[current_cpu].current_task).as_mut()
-        })
-    })
-}
-
-pub(super) fn current_task() -> TaskPtr {
-    with_current_task(|task| NonNull::from(task))
 }
 
 /// A handle to the current thread.
@@ -604,7 +646,7 @@ impl CurrentThreadHandle {
     /// Retrieves a handle to the current task.
     pub fn get() -> Self {
         Self {
-            task: current_task(),
+            task: SCHEDULER.current_task(),
         }
     }
 
@@ -628,7 +670,7 @@ impl CurrentThreadHandle {
             // If we're dropping in priority, trigger a context switch in case another task can be
             // scheduled or time slicing needs to be started.
             if old > priority {
-                crate::task::yield_task();
+                yield_task();
             }
         });
     }
@@ -644,6 +686,25 @@ pub(super) fn schedule_task_deletion(task: Option<NonNull<Task>>) {
     }
 }
 
+pub(crate) fn trigger_scheduler(run_scheduler: RunSchedulerOn) {
+    match run_scheduler {
+        RunSchedulerOn::DontRun => {}
+        RunSchedulerOn::RunOnCore(_core) => {
+            cfg_if::cfg_if! {
+                if #[cfg(multi_core)] {
+                    if _core == Cpu::current() {
+                        yield_task()
+                    } else {
+                        schedule_other_core()
+                    }
+                } else {
+                    yield_task()
+                }
+            }
+        }
+    }
+}
+
 #[inline]
 #[cfg(multi_core)]
 pub(crate) fn schedule_other_core() {
@@ -652,7 +713,4 @@ pub(crate) fn schedule_other_core() {
         Cpu::ProCpu => unsafe { SoftwareInterrupt::<'static, 1>::steal() }.raise(),
         Cpu::AppCpu => unsafe { SoftwareInterrupt::<'static, 0>::steal() }.raise(),
     }
-
-    // It takes a bit for the software interrupt to be serviced, but since it's happening on the
-    // other core, we don't need to wait.
 }

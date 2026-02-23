@@ -6,7 +6,11 @@ mod tests {
     use defmt::info;
     use esp_hal::{
         clock::CpuClock,
-        interrupt::software::{SoftwareInterrupt, SoftwareInterruptControl},
+        interrupt::{
+            Priority,
+            software::{SoftwareInterrupt, SoftwareInterruptControl},
+        },
+        peripherals::TIMG0,
         time::{Duration, Instant},
         timer::timg::TimerGroup,
     };
@@ -17,8 +21,9 @@ mod tests {
         queue::QueueHandle,
         semaphore::{SemaphoreHandle, SemaphoreKind},
     };
-    use esp_rtos::CurrentThreadHandle;
+    use esp_rtos::{CurrentThreadHandle, embassy::InterruptExecutor};
     use portable_atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+    use static_cell::StaticCell;
 
     struct Context {
         #[cfg(multi_core)]
@@ -53,6 +58,33 @@ mod tests {
             #[cfg(multi_core)]
             cpu_cntl: p.CPU_CTRL,
         }
+    }
+
+    fn no_init() {}
+
+    #[test(init = no_init)]
+    #[should_panic]
+    fn panics_in_interrupt_context() {
+        #[embassy_executor::task]
+        async fn try_init(timer: TIMG0<'static>, sw_int0: SoftwareInterrupt<'static, 0>) {
+            let timg0 = TimerGroup::new(timer);
+            esp_rtos::start(timg0.timer0, sw_int0);
+        }
+
+        crate::init_heap();
+
+        let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+        let p = esp_hal::init(config);
+
+        let sw_ints = SoftwareInterruptControl::new(p.SW_INTERRUPT);
+
+        static EXECUTOR_CORE_0: StaticCell<InterruptExecutor<1>> = StaticCell::new();
+        let executor_core0 = InterruptExecutor::new(sw_ints.software_interrupt1);
+        let executor_core0 = EXECUTOR_CORE_0.init(executor_core0);
+
+        let spawner = executor_core0.start(Priority::Priority1);
+
+        spawner.must_spawn(try_init(p.TIMG0, sw_ints.software_interrupt0));
     }
 
     #[test]
@@ -481,6 +513,86 @@ mod tests {
             // Park the second core, we don't need it anymore
             esp_hal::system::CpuControl::new(ctx.cpu_cntl).park_core(Cpu::AppCpu);
         }
+    }
+
+    #[test]
+    #[cfg(multi_core)]
+    async fn moving_data_to_second_core(ctx: Context) {
+        // This is a regression test for https://github.com/esp-rs/esp-hal/issues/4912.
+        // It doesn't necessarily need RTOS, but RTOS uses the affected multi-core APIs
+        // so we might as well test the whole chain.
+        use embassy_sync::signal::Signal;
+        use esp_sync::RawMutex;
+
+        static SIGNAL: Signal<RawMutex, Result<(), (usize, u32)>> = Signal::new();
+
+        // We rely on ESP_HAL_CONFIG_STACK_GUARD_OFFSET=4 here
+        let data = [0xabad1dea_u32; 20];
+
+        esp_rtos::start_second_core(
+            unsafe { ctx.cpu_cntl.clone_unchecked() },
+            ctx.sw_int1,
+            #[allow(static_mut_refs)]
+            unsafe {
+                &mut crate::APP_CORE_STACK
+            },
+            move || {
+                let result = if let Some(mismatch) = data
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .find(|(_, v)| *v != 0xabad1dea_u32)
+                {
+                    Err(mismatch)
+                } else {
+                    Ok(())
+                };
+
+                SIGNAL.signal(result);
+            },
+        );
+
+        let result = SIGNAL.wait().await;
+
+        if let Err((index, read)) = result {
+            defmt::panic!(
+                "Data corrupted at index {} (got {:x} instead of {:x})",
+                index,
+                read,
+                data[index]
+            );
+        }
+
+        unsafe {
+            // Park the second core, we don't need it anymore
+            esp_hal::system::CpuControl::new(ctx.cpu_cntl).park_core(Cpu::AppCpu);
+        }
+    }
+
+    #[test]
+    #[cfg(multi_core)]
+    async fn embassy_cross_core_bare_metal(ctx: Context) {
+        use embassy_sync::signal::Signal;
+        use esp_hal::delay::Delay;
+        use esp_sync::RawMutex;
+
+        static SIGNAL: Signal<RawMutex, ()> = Signal::new();
+
+        let _gaurd = esp_hal::system::CpuControl::new(ctx.cpu_cntl)
+            .start_app_core(
+                #[allow(static_mut_refs)]
+                unsafe {
+                    &mut crate::APP_CORE_STACK
+                },
+                move || {
+                    Delay::new().delay_millis(100);
+                    SIGNAL.signal(());
+                    loop {}
+                },
+            )
+            .unwrap();
+
+        SIGNAL.wait().await;
     }
 
     #[test]

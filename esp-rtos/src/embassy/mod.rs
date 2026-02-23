@@ -11,7 +11,11 @@ use esp_hal::{
 use macros::ram;
 use portable_atomic::AtomicPtr;
 
-use crate::{SCHEDULER, scheduler::SchedulerState, task::TaskPtr};
+use crate::{
+    SCHEDULER,
+    scheduler::SchedulerState,
+    task::{TaskPtr, read_thread_pointer},
+};
 
 /// A zero-overhead lock that allows mutable access to the contained value through the scheduler.
 struct SchedulerLocked<T> {
@@ -69,12 +73,12 @@ struct ThreadFlag {
 impl ThreadFlag {
     fn new() -> Self {
         let owner = SCHEDULER.with(|scheduler| {
-            let current_cpu = Cpu::current() as usize;
-            if let Some(current_task) = scheduler.per_cpu[current_cpu].current_task {
+            if let Some(current_task) = NonNull::new(read_thread_pointer()) {
                 current_task
             } else {
                 // We're cheating, the task hasn't been initialized yet.
-                NonNull::from(&scheduler.per_cpu[current_cpu].main_task)
+                let current_cpu = Cpu::current();
+                NonNull::from(&scheduler.per_cpu[current_cpu as usize].main_task)
             }
         });
         Self {
@@ -329,6 +333,7 @@ impl InterruptExecutorStorage {
     /// # Safety:
     ///
     /// The caller must ensure `set` has been called before.
+    #[inline(always)]
     unsafe fn get(&self) -> &raw::Executor {
         unsafe { &*self.raw_executor.load(Ordering::Relaxed) }
     }

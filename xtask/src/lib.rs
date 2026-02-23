@@ -8,8 +8,10 @@ use anyhow::{Context, Result, anyhow};
 use cargo::CargoAction;
 use esp_metadata::{Chip, Config, TokenStream};
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
+use pretty_yaml::{config::FormatOptions, format_text};
 use serde::{Deserialize, Serialize};
 use toml_edit::{InlineTable, Item, Value};
+use walkdir::WalkDir;
 
 use crate::{
     cargo::{CargoArgsBuilder, CargoCommandBatcher, CargoToml},
@@ -124,6 +126,22 @@ impl Package {
             .any(|line| line.contains("asm_experimental_arch"))
     }
 
+    /// Is the package compatible with the given chip?
+    pub fn supports_chip(&self, chip: Chip) -> bool {
+        if !self.has_chip_features() {
+            // Chip-independent package
+            return true;
+        }
+
+        let toml = self.toml();
+        let Some(Item::Table(features)) = toml.manifest.get("features") else {
+            unreachable!("has_chip_features() already checked for a features table");
+        };
+
+        let chip_name = chip.to_string();
+        features.iter().any(|(feature, _)| feature == chip_name)
+    }
+
     /// Does the package have a migration guide?
     pub fn has_migration_guide(&self, workspace: &Path) -> bool {
         let package_path = workspace.join(self.to_string());
@@ -208,7 +226,12 @@ impl Package {
 
     fn parse_conditional_features(table: &InlineTable, config: &Config) -> Option<Vec<String>> {
         let mut eval_context = somni_expr::Context::new();
-        eval_context.add_function("chip_has", |symbol: &str| {
+        let possible_symbols = Chip::list_of_possible_symbols();
+        eval_context.add_function("chip_has", move |symbol: &str| {
+            assert!(
+                possible_symbols.contains_key(symbol),
+                "Unknown chip symbol: {symbol}",
+            );
             config.all().iter().any(|sym| sym == symbol)
         });
         eval_context.add_variable("chip", config.name());
@@ -335,7 +358,7 @@ impl Package {
     #[cfg(feature = "semver-checks")]
     pub fn semver_feature_rules(&self, config: &Config) -> Vec<String> {
         let feature_sets = self
-            .feature_rules_from_metadata(config, "semver-configs", false)
+            .feature_rules_from_metadata(config, "semver-config", false)
             .unwrap_or_default();
 
         let features: Vec<String> = feature_sets.into_iter().flatten().collect();
@@ -424,8 +447,13 @@ impl Package {
             ));
         }
 
-        let toml = self.toml();
+        if !self.supports_chip(*chip) {
+            return Err(anyhow!(
+                "Package '{self}' does not have a chip feature for {chip}"
+            ));
+        }
 
+        let toml = self.toml();
         if let Some(metadata) = toml.espressif_metadata()
             && let Some(Item::Value(Value::Array(targets))) = metadata.get("requires_target")
             && !targets.iter().any(|t| t.as_str() == Some(&chip.target()))
@@ -463,6 +491,33 @@ impl Package {
         semver_checked
             .as_bool()
             .expect("semver-checked must be a boolean")
+    }
+
+    #[cfg(feature = "semver-checks")]
+    pub(crate) fn clean_semver_check(&self, dest_path: &Path) -> anyhow::Result<()> {
+        if self == &Package::EspRomSys && dest_path.exists() {
+            fs::remove_file(dest_path)
+                .context("Failed to remove existing generated_rom_symbols.rs")?;
+
+            // Create new file with placeholder content
+            fs::write(dest_path, "// Do not delete - placeholder for fmt!\n")
+                .context("Failed to create new generated_rom_symbols.rs placeholder")?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "semver-checks")]
+    pub(crate) fn prepare_semver_check(
+        &self,
+        package_path: &Path,
+        chip: &Chip,
+    ) -> anyhow::Result<()> {
+        if self == &Package::EspRomSys {
+            log::info!("Generating ROM symbol markers for chip: {}", chip);
+            crate::commands::generate_rom_symbols::generate_rom_symbols(&package_path, chip)?;
+        }
+        Ok(())
     }
 }
 
@@ -700,6 +755,7 @@ pub fn format_package(
 
     for path in &paths {
         format_package_path(workspace, path, check, format_rules)?;
+        format_yml(check, path)?;
     }
 
     Ok(())
@@ -848,6 +904,34 @@ fn format_package_path(
     log::debug!("{cargo_args:#?}");
 
     cargo::run(&cargo_args, &package_path)
+}
+
+/// Recursively format all `.yml` files in the `.github/` directory.
+pub fn format_yml<P: AsRef<Path>>(check: bool, path: P) -> Result<()> {
+    WalkDir::new(path)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "yml"))
+        .try_for_each(|entry| -> Result<()> {
+            let path = entry.path();
+            let content = fs::read_to_string(path)?;
+
+            let formatted = format_text(&content, &FormatOptions::default())
+                .context(format!("Failed to format {:?} yml!", path))?;
+
+            if content.replace("\r\n", "\n") != formatted.replace("\r\n", "\n") {
+                if check {
+                    anyhow::bail!("File not formatted: {:?}", path);
+                }
+
+                log::info!("Fixing format: {:?}", path);
+                fs::write(path, formatted)?;
+            }
+
+            Ok(())
+        })?;
+
+    Ok(())
 }
 
 /// Update the metadata and chip support table in the esp-hal README.

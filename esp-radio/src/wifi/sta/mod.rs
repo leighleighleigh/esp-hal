@@ -3,32 +3,47 @@
 use alloc::string::String;
 use core::fmt;
 
-use enumset::EnumSet;
 use procmacros::BuilderLite;
 
-use super::{AuthMethod, Protocol, scan::ScanMethod};
+use super::{AuthenticationMethod, Protocols, Ssid};
 use crate::WifiError;
 
-#[cfg(feature = "wifi-eap")]
-pub mod eap;
+unstable_module!(
+    #[cfg(feature = "wifi-eap")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "wifi-eap")))]
+    pub mod eap;
+);
+
+/// Wi-Fi scan method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
+#[repr(u8)]
+#[instability::unstable]
+pub enum ScanMethod {
+    /// Fast scan.
+    Fast,
+    /// Scan all channels.
+    AllChannels,
+}
 
 /// Station configuration for a Wi-Fi connection.
-#[derive(BuilderLite, Clone, Eq, PartialEq)]
+#[derive(BuilderLite, Clone, Eq, PartialEq, Hash)]
 pub struct StationConfig {
     /// The SSID of the Wi-Fi network.
-    #[builder_lite(reference)]
-    pub(crate) ssid: String,
+    #[builder_lite(skip_setter)]
+    pub(crate) ssid: Ssid,
     /// The BSSID (MAC address) of the station.
     pub(crate) bssid: Option<[u8; 6]>,
     /// The authentication method for the Wi-Fi connection.
-    pub(crate) auth_method: AuthMethod,
+    pub(crate) auth_method: AuthenticationMethod,
     /// The password for the Wi-Fi connection.
     #[builder_lite(reference)]
     pub(crate) password: String,
     /// The Wi-Fi channel to connect to.
     pub(crate) channel: Option<u8>,
     /// The set of protocols supported by the access point.
-    pub(crate) protocols: EnumSet<Protocol>,
+    pub(crate) protocols: Protocols,
     /// Interval for station to listen to beacon from access point.
     ///
     /// The unit of listen interval is one beacon interval.
@@ -55,6 +70,12 @@ pub struct StationConfig {
 }
 
 impl StationConfig {
+    /// Set the SSID of the access point.
+    pub fn with_ssid(mut self, ssid: impl Into<Ssid>) -> Self {
+        self.ssid = ssid.into();
+        self
+    }
+
     pub(crate) fn validate(&self) -> Result<(), WifiError> {
         if self.ssid.len() > 32 {
             return Err(WifiError::InvalidArguments);
@@ -75,12 +96,12 @@ impl StationConfig {
 impl Default for StationConfig {
     fn default() -> Self {
         StationConfig {
-            ssid: String::new(),
+            ssid: Ssid::default(),
             bssid: None,
-            auth_method: AuthMethod::Wpa2Personal,
+            auth_method: AuthenticationMethod::Wpa2Personal,
             password: String::new(),
             channel: None,
-            protocols: (Protocol::P802D11B | Protocol::P802D11BG | Protocol::P802D11BGN),
+            protocols: Protocols::default(),
             listen_interval: 3,
             beacon_timeout: 6,
             failure_retry_cnt: 1,

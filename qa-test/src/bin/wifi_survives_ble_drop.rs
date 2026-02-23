@@ -1,15 +1,11 @@
-//! This example creates BLE and WiFi and while waiting for WiFi to connect, BLE gets dropped - it
-//! shows that WiFi still works afterwards.
+//! This example creates BLE and WiFi and once it gets an IP address the BLE controller is dropped
+//! and shows that WiFi still works afterwards.
 //!
 //! - set SSID and PASSWORD env variable
 //! - gets an ip address via DHCP
 //! - performs an HTTP get request to some "random" server
-//!
-//! Note: On ESP32-C2 and ESP32-C3 you need a wifi-heap size of 70000, on
-//! ESP32-C6 you need 80000 and a tx_queue_size of 10
 
-//% FEATURES: esp-radio esp-radio/wifi esp-radio/ble esp-radio/smoltcp
-//% FEATURES: esp-radio/unstable esp-hal/unstable
+//% FEATURES: esp-radio esp-radio/wifi esp-radio/ble esp-radio/unstable esp-hal/unstable
 //% CHIPS: esp32 esp32c2 esp32c3 esp32c6 esp32s3
 
 #![no_std]
@@ -17,47 +13,40 @@
 
 use core::net::Ipv4Addr;
 
-use bleps::{
-    Ble,
-    HciConnector,
-    ad_structure::{
-        AdStructure,
-        BR_EDR_NOT_SUPPORTED,
-        LE_GENERAL_DISCOVERABLE,
-        create_advertising_data,
-    },
-    att::Uuid,
-};
-use blocking_network_stack::Stack;
-use embedded_io::*;
+use embassy_executor::Spawner;
+use embassy_net::{Runner, StackResources, tcp::TcpSocket};
+use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     interrupt::software::SoftwareInterruptControl,
-    main,
     ram,
     rng::Rng,
-    time::{self, Duration},
     timer::timg::TimerGroup,
 };
-use esp_println::{print, println};
+use esp_println::println;
 use esp_radio::{
     ble::controller::BleConnector,
-    wifi::{ModeConfig, sta::StationConfig},
+    wifi::{Config, Interface, WifiController, scan::ScanConfig, sta::StationConfig},
 };
-use smoltcp::{
-    iface::{SocketSet, SocketStorage},
-    wire::{DhcpOption, IpAddress},
-};
-
 esp_bootloader_esp_idf::esp_app_desc!();
+
+// When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
+macro_rules! mk_static {
+    ($t:ty,$val:expr) => {{
+        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
+        #[deny(unused_attributes)]
+        let x = STATIC_CELL.uninit().write(($val));
+        x
+    }};
+}
 
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("PASSWORD");
 
-#[main]
-fn main() -> ! {
+#[esp_rtos::main]
+async fn main(spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
@@ -78,154 +67,125 @@ fn main() -> ! {
     let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
 
-    let now = || time::Instant::now().duration_since_epoch().as_millis();
-
-    // initializing Bluetooth first results in a more stable WiFi connection on
-    // ESP32
-    let connector = BleConnector::new(peripherals.BT, Default::default()).unwrap();
-    let hci = HciConnector::new(connector, now);
-    let mut ble = Ble::new(&hci);
-
-    println!("{:?}", ble.init());
-    println!("{:?}", ble.cmd_set_le_advertising_parameters());
-    println!(
-        "{:?}",
-        ble.cmd_set_le_advertising_data(
-            create_advertising_data(&[
-                AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-                AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-                AdStructure::CompleteLocalName(esp_hal::chip!()),
-            ])
-            .unwrap()
-        )
-    );
-    println!("{:?}", ble.cmd_set_le_advertise_enable(true));
-
-    println!("started advertising");
+    let bluetooth = peripherals.BT;
+    let ble_controller = BleConnector::new(bluetooth, Default::default()).unwrap();
 
     let (mut controller, interfaces) =
         esp_radio::wifi::new(peripherals.WIFI, Default::default()).unwrap();
 
-    let mut device = interfaces.station;
-    let iface = create_interface(&mut device);
+    let wifi_interface = interfaces.station;
 
-    controller
-        .set_power_saving(esp_radio::wifi::PowerSaveMode::None)
-        .unwrap();
-
-    let mut socket_set_entries: [SocketStorage; 3] = Default::default();
-    let mut socket_set = SocketSet::new(&mut socket_set_entries[..]);
-    let mut dhcp_socket = smoltcp::socket::dhcpv4::Socket::new();
-    // we can set a hostname here (or add other DHCP options)
-    dhcp_socket.set_outgoing_options(&[DhcpOption {
-        kind: 12,
-        data: b"esp-radio",
-    }]);
-    socket_set.add(dhcp_socket);
+    let config = embassy_net::Config::dhcpv4(Default::default());
 
     let rng = Rng::new();
-    let stack = Stack::new(iface, device, socket_set, now, rng.random());
+    let seed = (rng.random() as u64) << 32 | rng.random() as u64;
 
-    let station_config = ModeConfig::Station(
-        StationConfig::default()
-            .with_ssid(SSID.into())
-            .with_password(PASSWORD.into()),
+    // Init network stack
+    let (stack, runner) = embassy_net::new(
+        wifi_interface,
+        config,
+        mk_static!(StackResources<3>, StackResources::<3>::new()),
+        seed,
     );
 
-    let res = controller.set_config(&station_config);
-    println!("wifi_set_configuration returned {:?}", res);
+    let station_config = Config::Station(
+        StationConfig::default()
+            .with_ssid(SSID)
+            .with_password(PASSWORD.into()),
+    );
+    println!("Starting wifi");
+    controller.set_config(&station_config).unwrap();
+    println!("Wifi started!");
 
-    controller.start().unwrap();
-    println!("is wifi started: {:?}", controller.is_started());
-    println!("{:?}", controller.capabilities());
-    println!("wifi_connect {:?}", controller.connect());
-
-    drop(hci);
-    println!("Dropped BLE HCI");
-
-    // wait to get connected
-    println!("Wait to get connected");
-    loop {
-        match controller.is_connected() {
-            Ok(true) => break,
-            Ok(false) => {}
-            Err(err) => {
-                println!("{:?}", err);
-                loop {}
-            }
-        }
-    }
-    println!("{:?}", controller.is_connected());
-
-    // wait for getting an ip address
-    println!("Wait to get an ip address");
-    loop {
-        stack.work();
-
-        if stack.is_iface_up() {
-            println!("got ip {:?}", stack.get_ip_info());
-            break;
-        }
+    println!("Scan");
+    let scan_config = ScanConfig::default().with_max(10);
+    let result = controller.scan_async(&scan_config).await.unwrap();
+    for ap in result {
+        println!("{:?}", ap);
     }
 
-    println!("Start busy loop on main");
+    spawner.spawn(connection(controller)).ok();
+    spawner.spawn(net_task(runner)).ok();
 
-    let mut rx_buffer = [0u8; 128];
-    let mut tx_buffer = [0u8; 128];
-    let mut socket = stack.get_socket(&mut rx_buffer, &mut tx_buffer);
+    let mut rx_buffer = [0; 4096];
+    let mut tx_buffer = [0; 4096];
+
+    stack.wait_config_up().await;
+
+    if let Some(config) = stack.config_v4() {
+        println!("Got IP: {}", config.address);
+    }
+
+    core::mem::drop(ble_controller);
+    println!("Dropped BLE controller");
 
     loop {
-        println!("Making HTTP request");
-        socket.work();
+        Timer::after(Duration::from_millis(1_000)).await;
 
-        socket
-            .open(IpAddress::Ipv4(Ipv4Addr::new(142, 250, 185, 115)), 80)
-            .unwrap();
+        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
 
-        socket
-            .write(b"GET / HTTP/1.0\r\nHost: www.mobile-j.de\r\n\r\n")
-            .unwrap();
-        socket.flush().unwrap();
+        socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
 
-        let deadline = time::Instant::now() + Duration::from_secs(20);
-        let mut buffer = [0u8; 128];
-        while let Ok(len) = socket.read(&mut buffer) {
-            let to_print = unsafe { core::str::from_utf8_unchecked(&buffer[..len]) };
-            print!("{}", to_print);
-
-            if time::Instant::now() > deadline {
-                println!("Timeout");
+        let remote_endpoint = (Ipv4Addr::new(216, 239, 32, 21), 80);
+        println!("connecting...");
+        let r = socket.connect(remote_endpoint).await;
+        if let Err(e) = r {
+            println!("connect error: {:?}", e);
+            continue;
+        }
+        println!("connected!");
+        let mut buf = [0; 1024];
+        loop {
+            use embedded_io_async::Write;
+            let r = socket
+                .write_all(b"GET / HTTP/1.0\r\nHost: www.mobile-j.de\r\n\r\n")
+                .await;
+            if let Err(e) = r {
+                println!("write error: {:?}", e);
                 break;
             }
+            let n = match socket.read(&mut buf).await {
+                Ok(0) => {
+                    println!("read EOF");
+                    break;
+                }
+                Ok(n) => n,
+                Err(e) => {
+                    println!("read error: {:?}", e);
+                    break;
+                }
+            };
+            println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
         }
-        println!();
-
-        socket.disconnect();
-
-        let deadline = time::Instant::now() + Duration::from_secs(5);
-        while time::Instant::now() < deadline {
-            socket.work();
-        }
+        Timer::after(Duration::from_millis(3000)).await;
     }
 }
 
-// some smoltcp boilerplate
-fn timestamp() -> smoltcp::time::Instant {
-    smoltcp::time::Instant::from_micros(
-        esp_hal::time::Instant::now()
-            .duration_since_epoch()
-            .as_micros() as i64,
-    )
+#[embassy_executor::task]
+async fn connection(mut controller: WifiController<'static>) {
+    println!("start connection task");
+
+    loop {
+        println!("About to connect...");
+
+        match controller.connect_async().await {
+            Ok(info) => {
+                println!("Wifi connected to {:?}", info);
+
+                // wait until we're no longer connected
+                let info = controller.wait_for_disconnect_async().await.ok();
+                println!("Disconnected: {:?}", info);
+            }
+            Err(e) => {
+                println!("Failed to connect to wifi: {e:?}");
+            }
+        }
+
+        Timer::after(Duration::from_millis(5000)).await
+    }
 }
 
-pub fn create_interface(device: &mut esp_radio::wifi::WifiDevice) -> smoltcp::iface::Interface {
-    // users could create multiple instances but since they only have one WifiDevice
-    // they probably can't do anything bad with that
-    smoltcp::iface::Interface::new(
-        smoltcp::iface::Config::new(smoltcp::wire::HardwareAddress::Ethernet(
-            smoltcp::wire::EthernetAddress::from_bytes(&device.mac_address()),
-        )),
-        device,
-        timestamp(),
-    )
+#[embassy_executor::task]
+async fn net_task(mut runner: Runner<'static, Interface<'static>>) {
+    runner.run().await
 }

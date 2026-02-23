@@ -1,7 +1,7 @@
 use esp_hal::system::Cpu;
 
 use crate::{
-    scheduler::CpuSchedulerState,
+    scheduler::CpuState,
     task::{TaskExt, TaskPtr, TaskQueue, TaskReadyQueueElement, TaskState},
 };
 
@@ -145,9 +145,7 @@ pub(crate) struct RunQueue {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RunSchedulerOn {
     DontRun,
-    CurrentCore,
-    #[cfg(multi_core)]
-    OtherCore,
+    RunOnCore(Cpu),
 }
 
 impl RunQueue {
@@ -161,7 +159,7 @@ impl RunQueue {
     #[esp_hal::ram]
     pub(crate) fn mark_task_ready(
         &mut self,
-        _state: &[CpuSchedulerState; Cpu::COUNT],
+        _state: &[CpuState; Cpu::COUNT],
         ready_task: TaskPtr,
     ) -> RunSchedulerOn {
         let priority = ready_task.priority(self);
@@ -207,37 +205,34 @@ impl RunQueue {
     #[esp_hal::ram]
     fn select_scheduler_trigger_multi_core(
         &mut self,
-        state: &[CpuSchedulerState; Cpu::COUNT],
+        per_cpu: &[CpuState],
         task: TaskPtr,
     ) -> RunSchedulerOn {
+        use crate::scheduler::SchedulerState;
+
         // We're running both schedulers, try to figure out where to schedule the context switch.
         let task_ref = unsafe { task.as_ref() };
         let ready_task_prio = task_ref.priority;
 
         let (target_cpu, target_cpu_prio) = if let Some(pinned_to) = task_ref.pinned_to {
             // Task is pinned, we have no choice in our target
-            let cpu = pinned_to as usize;
-            (cpu, state[cpu].current_priority())
+            (
+                pinned_to,
+                SchedulerState::priority_of_core(per_cpu, pinned_to as usize),
+            )
         } else {
             // Task is not pinned, pick the core that runs the lower priority task.
-
-            // Written like this because `state.iter()` leaves an unnecessary panic in the code.
-            let mut target = (0, state[0].current_priority());
-            #[allow(clippy::needless_range_loop)]
-            for i in 1..Cpu::COUNT {
-                if state[i].current_priority() < target.1 {
-                    target = (i, state[i].current_priority());
-                }
-            }
-            target
+            Cpu::all()
+                .map(|cpu| {
+                    let core_prio = SchedulerState::priority_of_core(per_cpu, cpu as usize);
+                    (cpu, core_prio)
+                })
+                .min_by_key(|(_, prio)| *prio) // Get lowest priority
+                .unwrap()
         };
 
         if ready_task_prio >= target_cpu_prio {
-            if target_cpu == Cpu::current() as usize {
-                RunSchedulerOn::CurrentCore
-            } else {
-                RunSchedulerOn::OtherCore
-            }
+            RunSchedulerOn::RunOnCore(target_cpu)
         } else {
             RunSchedulerOn::DontRun
         }
@@ -248,7 +243,7 @@ impl RunQueue {
         // Run the scheduler if the new priority is >= current maximum priority. This will trigger a
         // run even if the new task's priority is equal, to make sure time slicing is set up.
         if priority >= self.ready_priority.ready() {
-            RunSchedulerOn::CurrentCore
+            RunSchedulerOn::RunOnCore(Cpu::ProCpu)
         } else {
             RunSchedulerOn::DontRun
         }

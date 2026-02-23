@@ -14,39 +14,42 @@
 //! ## Configuration
 //!
 //! The SPI slave driver allows using full-duplex and can only be used with DMA.
-//!
-//! ## Examples
-//!
-//! ### SPI Slave with DMA
-//!
-//! ```rust, no_run
-//! # {before_snippet}
-//! # use esp_hal::dma_buffers;
-//! # use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
-//! # use esp_hal::spi::Mode;
-//! # use esp_hal::spi::slave::Spi;
-//! # {dma_channel}
-//! let sclk = peripherals.GPIO0;
-//! let miso = peripherals.GPIO1;
-//! let mosi = peripherals.GPIO2;
-//! let cs = peripherals.GPIO3;
-//!
-//! let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(32000);
-//! let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
-//! let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
-//! let mut spi = Spi::new(peripherals.SPI2, Mode::_0)
-//!     .with_sck(sclk)
-//!     .with_mosi(mosi)
-//!     .with_miso(miso)
-//!     .with_cs(cs)
-//!     .with_dma(dma_channel);
-//!
-//! let transfer = spi.transfer(50, dma_rx_buf, 50, dma_tx_buf)?;
-//!
-//! transfer.wait();
-//! # {after_snippet}
-//! ```
-//!
+#![cfg_attr(
+    spi_slave_supports_dma,
+    doc = r#"
+## Examples
+
+### SPI Slave with DMA
+
+```rust, no_run
+# {before_snippet}
+# use esp_hal::dma_buffers;
+# use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
+# use esp_hal::spi::Mode;
+# use esp_hal::spi::slave::Spi;
+# {dma_channel}
+let sclk = peripherals.GPIO0;
+let miso = peripherals.GPIO1;
+let mosi = peripherals.GPIO2;
+let cs = peripherals.GPIO3;
+
+let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(32000);
+let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+let mut spi = Spi::new(peripherals.SPI2, Mode::_0)
+    .with_sck(sclk)
+    .with_mosi(mosi)
+    .with_miso(miso)
+    .with_cs(cs)
+    .with_dma(dma_channel);
+
+let transfer = spi.transfer(50, dma_rx_buf, 50, dma_tx_buf)?;
+
+transfer.wait();
+# {after_snippet}
+```
+"#
+)]
 //! ## Implementation State
 //!
 //! This driver is currently **unstable**.
@@ -66,11 +69,10 @@
 
 use core::marker::PhantomData;
 
-use super::{Error, Mode};
+use super::Mode;
 use crate::{
     Blocking,
     DriverMode,
-    dma::DmaEligible,
     gpio::{
         InputSignal,
         NoPin,
@@ -81,8 +83,6 @@ use crate::{
     pac::spi2::RegisterBlock,
     system::PeripheralGuard,
 };
-
-const MAX_DMA_SIZE: usize = 32768 - 32;
 
 /// SPI peripheral driver.
 ///
@@ -159,6 +159,7 @@ impl<'d> Spi<'d, Blocking> {
 
 /// DMA (Direct Memory Access) functionality (Slave).
 #[instability::unstable]
+#[cfg(spi_slave_supports_dma)]
 pub mod dma {
     use core::mem::ManuallyDrop;
 
@@ -170,13 +171,17 @@ pub mod dma {
         dma::{
             Channel,
             DmaChannelFor,
+            DmaEligible,
             DmaRxBuffer,
             DmaRxInterrupt,
             DmaTxBuffer,
             EmptyBuf,
             PeripheralDmaChannel,
         },
+        spi::Error,
     };
+
+    const MAX_DMA_SIZE: usize = 32768 - 32;
 
     impl<'d> Spi<'d, Blocking> {
         /// Configures the SPI peripheral with the provided DMA channel and
@@ -513,7 +518,7 @@ pub mod dma {
         }
 
         fn reset_dma_before_usr_cmd(&self) {
-            #[cfg(gdma)]
+            #[cfg(dma_kind = "gdma")]
             self.regs().dma_conf().modify(|_, w| {
                 w.rx_afifo_rst().set_bit();
                 w.buf_afifo_rst().set_bit();
@@ -522,14 +527,14 @@ pub mod dma {
         }
 
         fn enable_dma(&self) {
-            #[cfg(gdma)]
+            #[cfg(dma_kind = "gdma")]
             self.regs().dma_conf().modify(|_, w| {
                 w.dma_tx_ena().set_bit();
                 w.dma_rx_ena().set_bit();
                 w.rx_eof_en().clear_bit()
             });
 
-            #[cfg(pdma)]
+            #[cfg(dma_kind = "pdma")]
             {
                 fn set_rst_bit(reg_block: &RegisterBlock, bit: bool) {
                     reg_block.dma_conf().modify(|_, w| {
@@ -550,7 +555,7 @@ pub mod dma {
         }
 
         fn clear_dma_interrupts(&self) {
-            #[cfg(gdma)]
+            #[cfg(dma_kind = "gdma")]
             self.regs().dma_int_clr().write(|w| {
                 w.dma_infifo_full_err().clear_bit_by_one();
                 w.dma_outfifo_empty_err().clear_bit_by_one();
@@ -559,7 +564,7 @@ pub mod dma {
                 w.mst_tx_afifo_rempty_err().clear_bit_by_one()
             });
 
-            #[cfg(pdma)]
+            #[cfg(dma_kind = "pdma")]
             self.regs().dma_int_clr().write(|w| {
                 w.inlink_dscr_empty().clear_bit_by_one();
                 w.outlink_dscr_error().clear_bit_by_one();
@@ -573,6 +578,34 @@ pub mod dma {
             });
         }
     }
+
+    /// A marker for DMA-capable SPI peripheral instances.
+    #[doc(hidden)]
+    #[allow(private_bounds)]
+    pub trait InstanceDma: Instance + DmaEligible {}
+
+    impl<'d> DmaEligible for AnySpi<'d> {
+        #[cfg(dma_kind = "gdma")]
+        type Dma = crate::dma::AnyGdmaChannel<'d>;
+        #[cfg(dma_kind = "pdma")]
+        type Dma = crate::dma::AnySpiDmaChannel<'d>;
+
+        fn dma_peripheral(&self) -> crate::dma::DmaPeripheral {
+            match &self.0 {
+                #[cfg(spi_master_spi2)]
+                any::Inner::Spi2(_) => crate::dma::DmaPeripheral::Spi2,
+                #[cfg(spi_master_spi3)]
+                any::Inner::Spi3(_) => crate::dma::DmaPeripheral::Spi3,
+            }
+        }
+    }
+
+    #[cfg(soc_has_spi2)]
+    impl InstanceDma for crate::peripherals::SPI2<'_> {}
+    #[cfg(soc_has_spi3)]
+    impl InstanceDma for crate::peripherals::SPI3<'_> {}
+
+    impl InstanceDma for AnySpi<'_> {}
 }
 
 /// A peripheral singleton compatible with the SPI slave driver.
@@ -581,16 +614,6 @@ pub trait Instance: crate::private::Sealed + any::Degrade {
     #[doc(hidden)]
     fn info(&self) -> &'static Info;
 }
-
-/// A marker for DMA-capable SPI peripheral instances.
-#[doc(hidden)]
-#[allow(private_bounds)]
-pub trait InstanceDma: Instance + DmaEligible {}
-
-#[cfg(soc_has_spi2)]
-impl InstanceDma for crate::peripherals::SPI2<'_> {}
-#[cfg(soc_has_spi3)]
-impl InstanceDma for crate::peripherals::SPI3<'_> {}
 
 /// Peripheral data describing a particular SPI instance.
 #[non_exhaustive]
@@ -752,25 +775,26 @@ impl Info {
         }
     }
 
+    #[cfg(spi_slave_supports_dma)]
     fn is_bus_busy(&self) -> bool {
-        #[cfg(pdma)]
+        #[cfg(dma_kind = "pdma")]
         {
             self.regs().slave().read().trans_done().bit_is_clear()
         }
-        #[cfg(gdma)]
+        #[cfg(dma_kind = "gdma")]
         {
             self.regs().dma_int_raw().read().trans_done().bit_is_clear()
         }
     }
 
-    // Clear the transaction-done interrupt flag so flush() can work properly. Not
-    // used in DMA mode.
+    // Clear the transaction-done interrupt flag so flush() can work properly.
+    #[cfg(spi_slave_supports_dma)]
     fn setup_for_flush(&self) {
-        #[cfg(pdma)]
+        #[cfg(dma_kind = "pdma")]
         self.regs()
             .slave()
             .modify(|_, w| w.trans_done().clear_bit());
-        #[cfg(gdma)]
+        #[cfg(dma_kind = "gdma")]
         self.regs()
             .dma_int_clr()
             .write(|w| w.trans_done().clear_bit_by_one());
@@ -815,25 +839,8 @@ crate::any_peripheral! {
     }
 }
 
-impl<'d> DmaEligible for AnySpi<'d> {
-    #[cfg(gdma)]
-    type Dma = crate::dma::AnyGdmaChannel<'d>;
-    #[cfg(pdma)]
-    type Dma = crate::dma::AnySpiDmaChannel<'d>;
-
-    fn dma_peripheral(&self) -> crate::dma::DmaPeripheral {
-        match &self.0 {
-            #[cfg(spi_master_spi2)]
-            any::Inner::Spi2(_) => crate::dma::DmaPeripheral::Spi2,
-            #[cfg(spi_master_spi3)]
-            any::Inner::Spi3(_) => crate::dma::DmaPeripheral::Spi3,
-        }
-    }
-}
 impl Instance for AnySpi<'_> {
     fn info(&self) -> &'static Info {
         any::delegate!(self, spi => { spi.info() })
     }
 }
-
-impl InstanceDma for AnySpi<'_> {}

@@ -4,7 +4,7 @@
 //! supports sending and receiving of raw frames.
 //!
 //! This module is intended to be used to implement support for higher-level
-//! communication protocols, for example [esp-openthread].
+//! communication protocols, for example [openthread].
 //!
 //! Note that this module currently requires you to enable the `unstable` feature
 //! on `esp-hal`.
@@ -13,9 +13,12 @@
 //! things will break.
 //!
 //! [IEEE 802.15.4]: https://en.wikipedia.org/wiki/IEEE_802.15.4
-//! [esp-openthread]: https://github.com/esp-rs/esp-openthread
+//! [openthread]: https://github.com/esp-rs/openthread
+
+#![allow(missing_docs)]
 
 use byte::{BytesExt, TryRead};
+use docsplay::Display;
 use esp_hal::{clock::PhyClockGuard, peripherals::IEEE802154};
 use esp_phy::PhyInitGuard;
 use esp_sync::NonReentrantMutex;
@@ -31,14 +34,14 @@ pub use self::{
     pib::{CcaMode, PendingMode},
     raw::RawReceived,
 };
-
 mod frame;
 mod hal;
 mod pib;
 mod raw;
 
 /// IEEE 802.15.4 errors
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// The requested data is bigger than available range, and/or the offset is
     /// invalid.
@@ -46,15 +49,6 @@ pub enum Error {
 
     /// The requested data content is invalid.
     BadInput,
-}
-
-impl core::fmt::Display for Error {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Error::Incomplete => write!(f, "Incomplete data."),
-            Error::BadInput => write!(f, "Bad input data."),
-        }
-    }
 }
 
 impl core::error::Error for Error {}
@@ -70,6 +64,7 @@ impl From<byte::Error> for Error {
 
 /// IEEE 802.15.4 driver configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Config {
     pub auto_ack_tx: bool,
     pub auto_ack_rx: bool,
@@ -96,7 +91,7 @@ impl Default for Config {
             promiscuous: Default::default(),
             coordinator: Default::default(),
             rx_when_idle: Default::default(),
-            txpower: 10,
+            txpower: 20,
             channel: 15,
             cca_threshold: CONFIG_IEEE802154_CCA_THRESHOLD,
             cca_mode: CcaMode::Ed,
@@ -110,6 +105,7 @@ impl Default for Config {
 
 /// IEEE 802.15.4 driver
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Ieee802154<'a> {
     _align: u32,
     transmit_buffer: [u8; FRAME_SIZE],
@@ -174,6 +170,21 @@ impl<'a> Ieee802154<'a> {
         ieee802154_poll()
     }
 
+    /// Get the ACK frame received in response to the last transmission.
+    ///
+    /// When a transmitted frame requires acknowledgment, the peer sends back
+    /// an ACK frame. This method returns that ACK frame data, which includes
+    /// the Frame Pending bit and other information needed by upper layers
+    /// like OpenThread.
+    ///
+    /// Returns `None` if no ACK was received (frame didn't require ACK,
+    /// ACK timed out, or no transmission has occurred).
+    ///
+    /// The ACK frame is cleared at the start of each new transmission.
+    pub fn get_ack_frame(&self) -> Option<RawReceived> {
+        raw::get_ack_frame()
+    }
+
     /// Get a received frame, if available
     pub fn received(&mut self) -> Option<Result<ReceivedFrame, Error>> {
         raw::ensure_receive_enabled();
@@ -216,7 +227,10 @@ impl<'a> Ieee802154<'a> {
     }
 
     /// Transmit a frame
-    pub fn transmit(&mut self, frame: &Frame) -> Result<(), Error> {
+    ///
+    /// If `cca` is true, a Clear Channel Assessment is performed before
+    /// transmitting. The transmission is aborted if the channel is busy.
+    pub fn transmit(&mut self, frame: &Frame, cca: bool) -> Result<(), Error> {
         let frm = mac::Frame {
             header: frame.header,
             content: frame.content,
@@ -234,17 +248,20 @@ impl<'a> Ieee802154<'a> {
             .unwrap();
         self.transmit_buffer[0] = (offset - 1) as u8;
 
-        ieee802154_transmit(self.transmit_buffer.as_ptr(), false); // what about CCA?
+        ieee802154_transmit(self.transmit_buffer.as_ptr(), cca);
 
         Ok(())
     }
 
     /// Transmit a raw frame
-    pub fn transmit_raw(&mut self, frame: &[u8]) -> Result<(), Error> {
+    ///
+    /// If `cca` is true, a Clear Channel Assessment is performed before
+    /// transmitting. The transmission is aborted if the channel is busy.
+    pub fn transmit_raw(&mut self, frame: &[u8], cca: bool) -> Result<(), Error> {
         self.transmit_buffer[1..][..frame.len()].copy_from_slice(frame);
         self.transmit_buffer[0] = frame.len() as u8;
 
-        ieee802154_transmit(self.transmit_buffer.as_ptr(), false); // what about CCA?
+        ieee802154_transmit(self.transmit_buffer.as_ptr(), cca);
 
         Ok(())
     }
@@ -294,6 +311,29 @@ impl<'a> Ieee802154<'a> {
     pub fn clear_rx_available_callback_fn(&mut self) {
         CALLBACKS.with(|cbs| cbs.rx_available_fn = None);
     }
+
+    /// Set the transmit failed callback function.
+    pub fn set_tx_failed_callback(&mut self, callback: &'a mut (dyn FnMut() + Send)) {
+        CALLBACKS.with(|cbs| {
+            let cb: &'static mut (dyn FnMut() + Send) = unsafe { core::mem::transmute(callback) };
+            cbs.tx_failed = Some(cb);
+        });
+    }
+
+    /// Clear the transmit failed callback function.
+    pub fn clear_tx_failed_callback(&mut self) {
+        CALLBACKS.with(|cbs| cbs.tx_failed = None);
+    }
+
+    /// Set the transmit failed callback function pointer.
+    pub fn set_tx_failed_callback_fn(&mut self, callback: fn()) {
+        CALLBACKS.with(|cbs| cbs.tx_failed_fn = Some(callback));
+    }
+
+    /// Clear the transmit failed callback function.
+    pub fn clear_tx_failed_callback_fn(&mut self) {
+        CALLBACKS.with(|cbs| cbs.tx_failed_fn = None);
+    }
 }
 
 impl Drop for Ieee802154<'_> {
@@ -302,6 +342,8 @@ impl Drop for Ieee802154<'_> {
         self.clear_tx_done_callback_fn();
         self.clear_rx_available_callback();
         self.clear_rx_available_callback_fn();
+        self.clear_tx_failed_callback();
+        self.clear_tx_failed_callback_fn();
     }
 }
 
@@ -324,9 +366,11 @@ pub fn rssi_to_lqi(rssi: i8) -> u8 {
 struct Callbacks {
     tx_done: Option<&'static mut (dyn FnMut() + Send)>,
     rx_available: Option<&'static mut (dyn FnMut() + Send)>,
+    tx_failed: Option<&'static mut (dyn FnMut() + Send)>,
     // TODO: remove these - Box<dyn FnMut> should be good enough
     tx_done_fn: Option<fn()>,
     rx_available_fn: Option<fn()>,
+    tx_failed_fn: Option<fn()>,
 }
 
 impl Callbacks {
@@ -347,19 +391,36 @@ impl Callbacks {
             cb();
         }
     }
+
+    fn call_tx_failed(&mut self) {
+        if let Some(cb) = self.tx_failed.as_mut() {
+            cb();
+        }
+        if let Some(cb) = self.tx_failed_fn.as_mut() {
+            cb();
+        }
+    }
 }
 
 static CALLBACKS: NonReentrantMutex<Callbacks> = NonReentrantMutex::new(Callbacks {
     tx_done: None,
     rx_available: None,
+    tx_failed: None,
     tx_done_fn: None,
     rx_available_fn: None,
+    tx_failed_fn: None,
 });
 
 fn tx_done() {
     trace!("tx_done callback");
 
     CALLBACKS.with(|cbs| cbs.call_tx_done());
+}
+
+fn tx_failed() {
+    trace!("tx_failed callback");
+
+    CALLBACKS.with(|cbs| cbs.call_tx_failed());
 }
 
 fn rx_available() {

@@ -3,7 +3,7 @@ name          = "esp-println"
 version       = "0.16.1"
 edition       = "2024"
 rust-version  = "1.86.0"
-description   = "Provides `print!` and `println!` implementations various Espressif devices"
+description   = "Provides `print!` and `println!` implementations for various Espressif devices"
 documentation = "https://docs.espressif.com/projects/rust/esp-println/latest/"
 keywords      = ["defmt", "embedded", "esp32", "espressif", "logging"]
 categories    = ["embedded", "hardware-support", "no-std"]
@@ -15,7 +15,7 @@ links         = "esp-println"
 doc-config = { features = ["auto", "defmt-espflash", "critical-section"] }
 check-configs = [
     { features = ["auto"] },
-    { features = ["jtag-serial"], if = 'chip_has("soc_has_usb_serial_jtag")' },
+    { features = ["jtag-serial"], if = 'chip_has("soc_has_usb_device")' },
     { features = ["uart"] },
     { features = ["no-op"] },
     { features = ["auto", "log-04", "timestamp"] },
@@ -58,6 +58,7 @@ default = ["auto", "colors", "critical-section"]
 esp32   = ["esp-metadata-generated/esp32", "esp-sync?/esp32"]
 esp32c2 = ["esp-metadata-generated/esp32c2", "esp-sync?/esp32c2"]
 esp32c3 = ["esp-metadata-generated/esp32c3", "esp-sync?/esp32c3"]
+esp32c5 = ["esp-metadata-generated/esp32c5", "esp-sync?/esp32c5"]
 esp32c6 = ["esp-metadata-generated/esp32c6", "esp-sync?/esp32c6"]
 esp32h2 = ["esp-metadata-generated/esp32h2", "esp-sync?/esp32h2"]
 esp32s2 = ["esp-metadata-generated/esp32s2", "esp-sync?/esp32s2"]
@@ -99,7 +100,7 @@ timestamp = []
 
 ## Automatically select the best output interface for the target.
 auto        = ["dep:portable-atomic"]
-## Use the `USB_SERIAL_JTAG` interface for printing. Available on ESP32-C3, ESP32-C6, ESP32-H2, ESP32-P4, and ESP32-S3.
+## Use the `USB_SERIAL_JTAG` interface for printing. Available on ESP32-C3, ESP32-C5, ESP32-C6, ESP32-H2, and ESP32-S3.
 jtag-serial = ["dep:portable-atomic"]
 ## Use the `UART0` peripheral for printing. Available on all devices.
 uart        = []

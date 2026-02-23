@@ -13,11 +13,11 @@ cores  = 1
 trm    = "https://www.espressif.com/sites/default/files/documentation/esp32-s2_technical_reference_manual_en.pdf"
 
 peripherals = [
-    { name = "AES", interrupts = { peri = "AES" } },
+    { name = "AES", interrupts = { peri = "AES" }, dma_peripheral = 4 },
     { name = "APB_SARADC" },
     { name = "DEDICATED_GPIO" },
     { name = "DS" },
-    { name = "EFUSE" },
+    { name = "EFUSE", hidden = true },
     { name = "EXTMEM" },
     { name = "FE" },
     { name = "FE2" },
@@ -27,7 +27,7 @@ peripherals = [
     { name = "I2C_ANA_MST" },
     { name = "I2C0", interrupts = { peri = "I2C_EXT0" } },
     { name = "I2C1", interrupts = { peri = "I2C_EXT1" } },
-    { name = "I2S0", interrupts = { peri = "I2S0" } },
+    { name = "I2S0", interrupts = { peri = "I2S0" }, dma_peripheral = 0 },
     { name = "INTERRUPT_CORE0" },
     { name = "IO_MUX" },
     { name = "LEDC" },
@@ -41,11 +41,11 @@ peripherals = [
     { name = "RTC_I2C" },
     { name = "RTC_IO" },
     { name = "SENS" },
-    { name = "SHA", interrupts = { peri = "SHA" } },
+    { name = "SHA", interrupts = { peri = "SHA" }, dma_peripheral = 5 },
     { name = "SPI0" },
     { name = "SPI1" },
-    { name = "SPI2", interrupts = { peri = "SPI2", dma = "SPI2_DMA" } },
-    { name = "SPI3", interrupts = { peri = "SPI3", dma = "SPI3_DMA" } },
+    { name = "SPI2", interrupts = { peri = "SPI2", dma = "SPI2_DMA" }, dma_peripheral = 1 },
+    { name = "SPI3", interrupts = { peri = "SPI3", dma = "SPI3_DMA" }, dma_peripheral = 2 },
     { name = "SYSCON" },
     { name = "SYSTEM" },
     { name = "SYSTIMER" },
@@ -54,11 +54,11 @@ peripherals = [
     { name = "TWAI0" },
     { name = "UART0", interrupts = { peri = "UART0" } },
     { name = "UART1", interrupts = { peri = "UART1" } },
-    { name = "UHCI0" },
+    { name = "UHCI0", dma_peripheral = 3 },
     { name = "USB0" },
     { name = "USB_WRAP" },
     { name = "XTS_AES" },
-    { name = "WIFI" },
+    { name = "WIFI", interrupts = { mac = "WIFI_MAC", pwr = "WIFI_PWR" } },
 
     { name = "DMA_SPI2", pac = "SPI2" },
     { name = "DMA_SPI3", pac = "SPI3" },
@@ -71,6 +71,7 @@ peripherals = [
     { name = "DAC1", virtual = true },
     { name = "DAC2", virtual = true },
     { name = "FLASH", virtual = true },
+    { name = "GPIO_DEDICATED", virtual = true },
     { name = "PSRAM", virtual = true },
     { name = "SW_INTERRUPT", virtual = true },
     { name = "ULP_RISCV_CORE", virtual = true },
@@ -78,13 +79,10 @@ peripherals = [
 
 symbols = [
     # Additional peripherals defined by us (the developers):
-    "pdma",
     "phy",
     "psram",
     "psram_dma",
     "ulp_riscv_core",
-    "soc_has_copy_dma",
-    "soc_has_crypto_dma",
 
     # ROM capabilities
     "rom_crc_le",
@@ -101,10 +99,7 @@ symbols = [
 ]
 
 [device.soc]
-ref_tick_hz = 1_000_000
 rc_fast_clk_default = 8_500_000
-rc_slow_clock = 90_000
-xtal_options = [40]
 
 memory_map = { ranges = [
     { name = "dram", start = 0x3FFB_0000, end = 0x4000_0000 },
@@ -134,10 +129,10 @@ clocks = { system_clocks = { clock_tree = [
     # The meta-switch
     { name = "CPU_CLK", type = "mux", always_on = true, variants = [
         # source clock      CPU clock                   additional config (mux = variant name, divider = divisor expression)
-        { name = "XTAL",    outputs = "SYSTEM_PRE_DIV", configures = [ "SYSTEM_PRE_DIV_IN = XTAL",    "APB_CLK = XTAL",     "REF_TICK = XTAL",    "REF_TICK_XTAL = APB_CLK / 1_000_000 - 1" ] },
-        { name = "RC_FAST", outputs = "SYSTEM_PRE_DIV", configures = [ "SYSTEM_PRE_DIV_IN = RC_FAST", "APB_CLK = RC_FAST",  "REF_TICK = RC_FAST", "REF_TICK_CK8M = APB_CLK / 1_000_000 - 1" ] },
-        { name = "APLL",    outputs = "CPU_PLL_DIV",    configures = [ "CPU_PLL_DIV_IN = APLL",       "APB_CLK = APLL",     "REF_TICK = APLL",    "REF_TICK_XTAL = APB_CLK / 1_000_000 - 1" ] },
-        { name = "PLL",     outputs = "CPU_PLL_DIV",    configures = [ "CPU_PLL_DIV_IN = PLL",        "APB_CLK = PLL",      "REF_TICK = PLL",     "REF_TICK_XTAL = APB_CLK / 1_000_000 - 1" ] },
+        { name = "XTAL",    outputs = "SYSTEM_PRE_DIV", configures = [ "SYSTEM_PRE_DIV_IN = XTAL",    "APB_CLK = XTAL",     "REF_TICK = XTAL",    "REF_TICK_XTAL = XTAL_CLK / 1_000_000 - 1" ] },
+        { name = "RC_FAST", outputs = "SYSTEM_PRE_DIV", configures = [ "SYSTEM_PRE_DIV_IN = RC_FAST", "APB_CLK = RC_FAST",  "REF_TICK = RC_FAST", "REF_TICK_CK8M = RC_FAST_CLK / 1_000_000 - 1" ] },
+        { name = "APLL",    outputs = "CPU_PLL_DIV",    configures = [ "CPU_PLL_DIV_IN = APLL",       "APB_CLK = APLL",     "REF_TICK = APLL",    "REF_TICK_XTAL = XTAL_CLK / 1_000_000 - 1" ] },
+        { name = "PLL",     outputs = "CPU_PLL_DIV",    configures = [ "CPU_PLL_DIV_IN = PLL",        "APB_CLK = PLL",      "REF_TICK = PLL",     "REF_TICK_XTAL = XTAL_CLK / 1_000_000 - 1" ] },
     ] },
 
     # APB options
@@ -151,8 +146,8 @@ clocks = { system_clocks = { clock_tree = [
     ] },
 
     # REF_TICK, configuring CPU clock needs to ensure this is 1MHz
-    { name = "REF_TICK_XTAL", type = "divider", divisors = "0 .. 256", output = "APB_CLK / (DIVISOR + 1)" },
-    { name = "REF_TICK_CK8M", type = "divider", divisors = "0 .. 256", output = "APB_CLK / (DIVISOR + 1)" },
+    { name = "REF_TICK_XTAL", type = "divider", divisors = "0 .. 256", output = "XTAL_CLK / (DIVISOR + 1)" },
+    { name = "REF_TICK_CK8M", type = "divider", divisors = "0 .. 256", output = "RC_FAST_CLK / (DIVISOR + 1)" },
     { name = "REF_TICK", type = "mux", variants = [
         { name = "PLL",     outputs = "REF_TICK_XTAL" },
         { name = "APLL",    outputs = "REF_TICK_XTAL" },
@@ -162,18 +157,24 @@ clocks = { system_clocks = { clock_tree = [
 
     # Low-speed clocks
     { name = "XTAL32K_CLK",     type = "source",  output = "32768" },
-    { name = "RC_SLOW_CLK",     type = "source",  output = "90_000", always_on = true },
+    { name = "RC_SLOW_CLK",     type = "source",  output = "90_000" },
     { name = "RC_FAST_DIV_CLK", type = "divider", output = "RC_FAST_CLK / 256" },
     { name = "XTAL_DIV_CLK",    type = "divider", output = "XTAL_CLK / 4" }, # source: esp-idf SOC_RTC_FAST_CLK_SRC_XTAL_D4
 
     { name = "RTC_SLOW_CLK", type = "mux", variants = [
-        { name = "XTAL",    outputs = "XTAL32K_CLK" },
+        { name = "XTAL32K",    outputs = "XTAL32K_CLK" },
         { name = "RC_SLOW", outputs = "RC_SLOW_CLK" },
         { name = "RC_FAST", outputs = "RC_FAST_DIV_CLK" },
     ] },
     { name = "RTC_FAST_CLK", type = "mux", variants = [
         { name = "XTAL", outputs = "XTAL_DIV_CLK" },
         { name = "RC",   outputs = "RC_FAST_CLK" },
+    ] },
+
+    # System-wide peripheral clocks
+    { name = "UART_MEM_CLK", type = "mux", default = "XTAL", variants = [
+        # The actual source clock is unknown, but it also doesn't matter.
+        { name = "XTAL", outputs = "XTAL_CLK" },
     ] },
 ] }, peripheral_clocks = { templates = [
     # templates
@@ -196,6 +197,7 @@ clocks = { system_clocks = { clock_tree = [
     
     # The exception: CopyDma needs to be enabled in its own register space and its reset is a bit gnarly
     { name = "CopyDma", template_params = { clk_en_template = "crate::peripherals::DMA_COPY::regs().conf().modify(|_, w| w.clk_en().bit(enable));", rst_template = "crate::peripherals::DMA_COPY::regs().conf().modify(|_, w| { w.in_rst().bit(reset).out_rst().bit(reset).cmdfifo_rst().bit(reset).fifo_rst().bit(reset) });" } },
+    { name = "DedicatedGpio", template_params = { clk_en_register = "cpu_peri_clk_en", rst_register = "cpu_peri_rst_en" } },
 
     #{ name = "Adc2Arb" },
     { name = "Systimer", keep_enabled = true },
@@ -231,10 +233,18 @@ clocks = { system_clocks = { clock_tree = [
     { name = "Uhci0" },
     { name = "I2cExt0" },
     { name = "Spi2" },
-    { name = "Uart1" },
+    { name = "Uart1", clocks = "Uart0" },
     { name = "I2s0" },
     { name = "Wdg" },
-    { name = "Uart0", template_params = { peripheral = "uart" }, keep_enabled = true },
+    { name = "Uart0", template_params = { peripheral = "uart" }, keep_enabled = true, clocks = [
+        { name = "FUNCTION_CLOCK", type = "mux", default = "APB", variants = [
+            { name = "APB",      outputs = "APB_CLK" },
+            { name = "REF_TICK", outputs = "REF_TICK" }
+        ] },
+        { name = "MEM_CLOCK", type = "mux", default = "MEM", variants = [
+            { name = "MEM", outputs = "UART_MEM_CLK" },
+        ] },
+    ] },
     #{ name = "Spi01" },
     #{ name = "Timers" },
     
@@ -267,6 +277,11 @@ instances = [
     { name = "dac2" },
 ]
 
+[device.dma]
+support_status = "partial"
+kind = "pdma"
+supports_mem2mem = true
+
 [device.gpio]
 support_status = "supported"
 has_bank_1 = true
@@ -276,7 +291,7 @@ output_signal_max = 256
 constant_0_input = 0x3c
 constant_1_input = 0x38
 pins = [
-    { pin =  0,                                                                                                               rtc = { 0 = "RTC_GPIO0"  } },
+    { pin =  0,                                                                                                               rtc = { 0 = "RTC_GPIO0"  }, limitations = ["strapping"] },
     { pin =  1,                                                                analog = { 0 = "TOUCH1",     1 = "ADC1_CH0" }, rtc = { 0 = "RTC_GPIO1"  } },
     { pin =  2,                                                                analog = { 0 = "TOUCH2",     1 = "ADC1_CH1" }, rtc = { 0 = "RTC_GPIO2"  } },
     { pin =  3,                                                                analog = { 0 = "TOUCH3",     1 = "ADC1_CH2" }, rtc = { 0 = "RTC_GPIO3"  } },
@@ -299,18 +314,18 @@ pins = [
     { pin = 20, functions = { 2 = "U1CTS",   3 = "CLK_OUT1" },                 analog = { 0 = "USB_DP",     1 = "ADC2_CH9" }, rtc = { 0 = "RTC_GPIO20" } },
     { pin = 21,                                                                                                               rtc = { 0 = "RTC_GPIO21" } },
 
-    { pin = 26, functions = { 0 = "SPICS1" }, limited = true },
-    { pin = 27, functions = { 0 = "SPIHD"  }, limited = true },
-    { pin = 28, functions = { 0 = "SPIWP"  }, limited = true },
-    { pin = 29, functions = { 0 = "SPICS0" }, limited = true },
-    { pin = 30, functions = { 0 = "SPICLK" }, limited = true },
-    { pin = 31, functions = { 0 = "SPIQ"   }, limited = true },
-    { pin = 32, functions = { 0 = "SPID"   }, limited = true },
-    { pin = 33, functions = {              2 = "FSPIHD",   3 = "SUBSPIHD"              } },
-    { pin = 34, functions = {              2 = "FSPICS0",  3 = "SUBSPICS0"             } },
-    { pin = 35, functions = {              2 = "FSPID",    3 = "SUBSPID"               } },
-    { pin = 36, functions = {              2 = "FSPICLK",  3 = "SUBSPICLK"             } },
-    { pin = 37, functions = {              2 = "FSPIQ",    3 = "SUBSPIQ", 4 = "SPIDQS" } },
+    { pin = 26, functions = { 0 = "SPICS1" },                                             limitations = ["spi_psram"] },
+    { pin = 27, functions = { 0 = "SPIHD"  },                                             limitations = ["spi_flash", "spi_psram"] },
+    { pin = 28, functions = { 0 = "SPIWP"  },                                             limitations = ["spi_flash", "spi_psram"] },
+    { pin = 29, functions = { 0 = "SPICS0" },                                             limitations = ["spi_flash"] },
+    { pin = 30, functions = { 0 = "SPICLK" },                                             limitations = ["spi_flash", "spi_psram"] },
+    { pin = 31, functions = { 0 = "SPIQ"   },                                             limitations = ["spi_flash", "spi_psram"] },
+    { pin = 32, functions = { 0 = "SPID"   },                                             limitations = ["spi_flash", "spi_psram"] },
+    { pin = 33, functions = {              2 = "FSPIHD",   3 = "SUBSPIHD"              }, limitations = ["octal_flash", "octal_psram"] },
+    { pin = 34, functions = {              2 = "FSPICS0",  3 = "SUBSPICS0"             }, limitations = ["octal_flash", "octal_psram"] },
+    { pin = 35, functions = {              2 = "FSPID",    3 = "SUBSPID"               }, limitations = ["octal_flash", "octal_psram"] },
+    { pin = 36, functions = {              2 = "FSPICLK",  3 = "SUBSPICLK"             }, limitations = ["octal_flash", "octal_psram"] },
+    { pin = 37, functions = {              2 = "FSPIQ",    3 = "SUBSPIQ", 4 = "SPIDQS" }, limitations = ["octal_flash", "octal_psram"] },
     { pin = 38, functions = {              2 = "FSPIWP",   3 = "SUBSPIWP"              } },
     { pin = 39, functions = { 0 = "MTCK",  2 = "CLK_OUT3", 3 = "SUBSPICS1" } },
     { pin = 40, functions = { 0 = "MTDO",  2 = "CLK_OUT2" } },
@@ -318,8 +333,8 @@ pins = [
     { pin = 42, functions = { 0 = "MTMS" } },
     { pin = 43, functions = { 0 = "U0TXD", 2 = "CLK_OUT1" } },
     { pin = 44, functions = { 0 = "U0RXD", 2 = "CLK_OUT2" } },
-    { pin = 45 },
-    { pin = 46 },
+    { pin = 45, limitations = ["strapping"] },
+    { pin = 46, limitations = ["strapping"] },
 ]
 input_signals = [
     { name = "SPIQ",              id = 0 },
@@ -402,14 +417,14 @@ input_signals = [
     { name = "PCMFSYNC",          id = 203 },
     { name = "PCMCLK",            id = 204 },
 
-    { name = "PRO_ALONEGPIO_IN0", id = 235 },
-    { name = "PRO_ALONEGPIO_IN1", id = 236 },
-    { name = "PRO_ALONEGPIO_IN2", id = 237 },
-    { name = "PRO_ALONEGPIO_IN3", id = 238 },
-    { name = "PRO_ALONEGPIO_IN4", id = 239 },
-    { name = "PRO_ALONEGPIO_IN5", id = 240 },
-    { name = "PRO_ALONEGPIO_IN6", id = 241 },
-    { name = "PRO_ALONEGPIO_IN7", id = 242 },
+    { name = "PRO_ALONEGPIO0",    id = 235 },
+    { name = "PRO_ALONEGPIO1",    id = 236 },
+    { name = "PRO_ALONEGPIO2",    id = 237 },
+    { name = "PRO_ALONEGPIO3",    id = 238 },
+    { name = "PRO_ALONEGPIO4",    id = 239 },
+    { name = "PRO_ALONEGPIO5",    id = 240 },
+    { name = "PRO_ALONEGPIO6",    id = 241 },
+    { name = "PRO_ALONEGPIO7",    id = 242 },
 
     { name = "MTDI" },
     { name = "MTCK" },
@@ -512,14 +527,14 @@ output_signals = [
     { name = "PCMFSYNC",         id = 209 },
     { name = "PCMCLK",           id = 210 },
 
-    { name = "PRO_ALONEGPIO_OUT0", id = 235 },
-    { name = "PRO_ALONEGPIO_OUT1", id = 236 },
-    { name = "PRO_ALONEGPIO_OUT2", id = 237 },
-    { name = "PRO_ALONEGPIO_OUT3", id = 238 },
-    { name = "PRO_ALONEGPIO_OUT4", id = 239 },
-    { name = "PRO_ALONEGPIO_OUT5", id = 240 },
-    { name = "PRO_ALONEGPIO_OUT6", id = 241 },
-    { name = "PRO_ALONEGPIO_OUT7", id = 242 },
+    { name = "PRO_ALONEGPIO0",   id = 235 },
+    { name = "PRO_ALONEGPIO1",   id = 236 },
+    { name = "PRO_ALONEGPIO2",   id = 237 },
+    { name = "PRO_ALONEGPIO3",   id = 238 },
+    { name = "PRO_ALONEGPIO4",   id = 239 },
+    { name = "PRO_ALONEGPIO5",   id = 240 },
+    { name = "PRO_ALONEGPIO6",   id = 241 },
+    { name = "PRO_ALONEGPIO7",   id = 242 },
 
     { name = "CLK_I2S",          id = 251 },
 
@@ -531,6 +546,12 @@ output_signals = [
 
     { name = "MTDO" },
 ]
+
+[device.dedicated_gpio]
+support_status = "partial"
+channels = [["PRO_ALONEGPIO0", "PRO_ALONEGPIO1", "PRO_ALONEGPIO2", "PRO_ALONEGPIO3", "PRO_ALONEGPIO4", "PRO_ALONEGPIO5", "PRO_ALONEGPIO6", "PRO_ALONEGPIO7"]]
+needs_initialization = true
+
 [device.i2c_master]
 support_status = "supported"
 instances = [
@@ -552,6 +573,9 @@ support_status = "not_supported"
 [device.interrupts]
 support_status = "partial"
 status_registers = 3
+software_interrupt_count = 4
+software_interrupt_delay = 0
+controller = "Xtensa"
 
 [device.rmt]
 support_status = "partial"
@@ -580,7 +604,9 @@ algo = { sha1 = 0, sha224 = 1, sha256 = 2, sha384 = 3, sha512 = 4, sha512_224 = 
 
 [device.spi_master]
 support_status = "supported"
+supports_dma = true
 has_octal = true
+has_dma_segmented_transfer = true
 instances = [
     { name = "spi2", sys_instance = "Spi2", sclk = "FSPICLK",  sio = ["FSPID", "FSPIQ", "FSPIWP", "FSPIHD", "FSPIIO4", "FSPIIO5", "FSPIIO6", "FSPIIO7"], cs = ["FSPICS0", "FSPICS1", "FSPICS2", "FSPICS3", "FSPICS4", "FSPICS5"] },
     { name = "spi3", sys_instance = "Spi3", sclk = "SPI3_CLK", sio = ["SPI3_D", "SPI3_Q"], cs = ["SPI3_CS0", "SPI3_CS1", "SPI3_CS2"] },
@@ -588,6 +614,7 @@ instances = [
 
 [device.spi_slave]
 support_status = "partial"
+supports_dma = true
 instances = [
     { name = "spi2", sys_instance = "Spi2", sclk = "FSPICLK",  mosi = "FSPID",  miso = "FSPIQ",  cs = "FSPICS0" },
     { name = "spi3", sys_instance = "Spi3", sclk = "SPI3_CLK", mosi = "SPI3_D", miso = "SPI3_Q", cs = "SPI3_CS0" },
@@ -598,7 +625,6 @@ support_status = "partial"
 timg_has_timer1 = true
 timg_has_divcnt_rst = false
 instances = [{ name = "timg0" }, { name = "timg1" }]
-default_clock_source = 0 # use_xtal = false
 
 [device.uart]
 support_status = "supported"
@@ -607,6 +633,9 @@ instances = [
     { name = "uart1", sys_instance = "Uart1", tx = "U1TXD", rx = "U1RXD", cts = "U1CTS", rts = "U1RTS" },
 ]
 ram_size = 128
+
+[device.uhci]
+support_status = "not_supported"
 
 [device.rgb_display] # via SPI and I2S
 support_status = "not_supported"
@@ -622,7 +651,13 @@ support_status = "not_supported"
 
 [device.rng]
 support_status = "partial"
+trng_supported = true
 apb_cycle_wait_num = 16 # TODO
+
+[device.sleep]
+support_status = "partial"
+light_sleep = true
+deep_sleep = true
 
 # Other drivers which are partially supported but have no other configuration:
 
@@ -637,10 +672,8 @@ apb_cycle_wait_num = 16 # TODO
 [device.usb_otg]
 
 ## Miscellaneous
-[device.dma]
 [device.io_mux]
 [device.psram]
-[device.sleep]
 [device.systimer]
 [device.temp_sensor]
 [device.ulp_fsm]
@@ -648,4 +681,6 @@ apb_cycle_wait_num = 16 # TODO
 
 ## Radio
 [device.wifi]
+mac_version = 1
+
 [device.phy]

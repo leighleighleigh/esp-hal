@@ -16,119 +16,125 @@
 //! * Calibration
 //! * Low-Power Management
 //! * Handling Watchdog Timers
-//!
-//! ## Examples
-//!
-//! ### Get time in ms from the RTC Timer
-//!
-//! ```rust, no_run
-//! # {before_snippet}
-//! # use core::time::Duration;
-//! # use esp_hal::{delay::Delay, rtc_cntl::Rtc};
-//!
-//! let rtc = Rtc::new(peripherals.LPWR);
-//! let delay = Delay::new();
-//!
-//! loop {
-//!     // Print the current RTC time in milliseconds
-//!     let time_ms = rtc.current_time_us() / 1000;
-//!     delay.delay_millis(1000);
-//!
-//!     // Set the time to half a second in the past
-//!     let new_time = rtc.current_time_us() - 500_000;
-//!     rtc.set_current_time_us(new_time);
-//! }
-//! # }
-//! ```
-//!
-//! ### RWDT usage
-//! ```rust, no_run
-//! # {before_snippet}
-//! # use core::cell::RefCell;
-//! # use critical_section::Mutex;
-//! # use esp_hal::delay::Delay;
-//! # use esp_hal::rtc_cntl::Rtc;
-//! # use esp_hal::rtc_cntl::Rwdt;
-//! # use esp_hal::rtc_cntl::RwdtStage;
-//! static RWDT: Mutex<RefCell<Option<Rwdt>>> = Mutex::new(RefCell::new(None));
-//!
-//! let mut delay = Delay::new();
-//! let mut rtc = Rtc::new(peripherals.LPWR);
-//!
-//! rtc.set_interrupt_handler(interrupt_handler);
-//! rtc.rwdt
-//!     .set_timeout(RwdtStage::Stage0, Duration::from_millis(2000));
-//! rtc.rwdt.listen();
-//!
-//! critical_section::with(|cs| RWDT.borrow_ref_mut(cs).replace(rtc.rwdt));
-//! # {after_snippet}
-//!
-//! // Where the `LP_WDT` interrupt handler is defined as:
-//! # use core::cell::RefCell;
-//! # use critical_section::Mutex;
-//! # use esp_hal::rtc_cntl::Rwdt;
-//! # use esp_hal::rtc_cntl::RwdtStage;
-//! static RWDT: Mutex<RefCell<Option<Rwdt>>> = Mutex::new(RefCell::new(None));
-//!
-//! // Handle the corresponding interrupt
-//! #[handler]
-//! fn interrupt_handler() {
-//!     critical_section::with(|cs| {
-//!         println!("RWDT Interrupt");
-//!
-//!         let mut rwdt = RWDT.borrow_ref_mut(cs);
-//!         if let Some(rwdt) = rwdt.as_mut() {
-//!             rwdt.clear_interrupt();
-//!
-//!             println!("Restarting in 5 seconds...");
-//!
-//!             rwdt.set_timeout(RwdtStage::Stage0, Duration::from_millis(5000));
-//!             rwdt.unlisten();
-//!         }
-//!     });
-//! }
-//! ```
-//!
-//! ### Get time in ms from the RTC Timer
-//! ```rust, no_run
-//! # {before_snippet}
-//! # use core::time::Duration;
-//! # use esp_hal::{delay::Delay, rtc_cntl::Rtc};
-//!
-//! let rtc = Rtc::new(peripherals.LPWR);
-//! let delay = Delay::new();
-//!
-//! loop {
-//!     // Get the current RTC time in milliseconds
-//!     let time_ms = rtc.current_time_us() * 1000;
-//!     delay.delay_millis(1000);
-//!
-//!     // Set the time to half a second in the past
-//!     let new_time = rtc.current_time_us() - 500_000;
-//!     rtc.set_current_time_us(new_time);
-//! }
-//! # }
-//! ```
+#![cfg_attr(
+    not(esp32c5), // TODO: these examples need to be feature-gated instead of chip-gated
+    doc = r#"
+## Examples
 
+### Get time in ms from the RTC Timer
+
+```rust, no_run
+# {before_snippet}
+# use core::time::Duration;
+# use esp_hal::{delay::Delay, rtc_cntl::Rtc};
+
+let rtc = Rtc::new(peripherals.LPWR);
+let delay = Delay::new();
+
+loop {
+    // Print the current RTC time in milliseconds
+    let time_ms = rtc.current_time_us() / 1000;
+    delay.delay_millis(1000);
+
+    // Set the time to half a second in the past
+    let new_time = rtc.current_time_us() - 500_000;
+    rtc.set_current_time_us(new_time);
+}
+# }
+```
+
+### RWDT usage
+```rust, no_run
+# {before_snippet}
+# use core::cell::RefCell;
+# use critical_section::Mutex;
+# use esp_hal::delay::Delay;
+# use esp_hal::rtc_cntl::Rtc;
+# use esp_hal::rtc_cntl::Rwdt;
+# use esp_hal::rtc_cntl::RwdtStage;
+static RWDT: Mutex<RefCell<Option<Rwdt>>> = Mutex::new(RefCell::new(None));
+
+let mut delay = Delay::new();
+let mut rtc = Rtc::new(peripherals.LPWR);
+
+rtc.set_interrupt_handler(interrupt_handler);
+rtc.rwdt
+    .set_timeout(RwdtStage::Stage0, Duration::from_millis(2000));
+rtc.rwdt.listen();
+
+critical_section::with(|cs| RWDT.borrow_ref_mut(cs).replace(rtc.rwdt));
+# {after_snippet}
+
+// Where the `LP_WDT` interrupt handler is defined as:
+# use core::cell::RefCell;
+# use critical_section::Mutex;
+# use esp_hal::rtc_cntl::Rwdt;
+# use esp_hal::rtc_cntl::RwdtStage;
+static RWDT: Mutex<RefCell<Option<Rwdt>>> = Mutex::new(RefCell::new(None));
+
+// Handle the corresponding interrupt
+#[handler]
+fn interrupt_handler() {
+    critical_section::with(|cs| {
+        println!("RWDT Interrupt");
+
+        let mut rwdt = RWDT.borrow_ref_mut(cs);
+        if let Some(rwdt) = rwdt.as_mut() {
+            rwdt.clear_interrupt();
+
+            println!("Restarting in 5 seconds...");
+
+            rwdt.set_timeout(RwdtStage::Stage0, Duration::from_millis(5000));
+            rwdt.unlisten();
+        }
+    });
+}
+```
+
+### Get time in ms from the RTC Timer
+```rust, no_run
+# {before_snippet}
+# use core::time::Duration;
+# use esp_hal::{delay::Delay, rtc_cntl::Rtc};
+
+let rtc = Rtc::new(peripherals.LPWR);
+let delay = Delay::new();
+
+loop {
+    // Get the current RTC time in milliseconds
+    let time_ms = rtc.current_time_us() / 1000;
+    delay.delay_millis(1000);
+
+    // Set the time to half a second in the past
+    let new_time = rtc.current_time_us() - 500_000;
+    rtc.set_current_time_us(new_time);
+}
+# }
+```
+"#
+)]
 pub use self::rtc::SocResetReason;
-#[cfg(not(esp32))]
-use crate::efuse::Efuse;
-#[cfg(any(esp32, esp32s2, esp32s3, esp32c3, esp32c6, esp32c2, esp32h2))]
+#[cfg(sleep_driver_supported)]
 use crate::rtc_cntl::sleep::{RtcSleepConfig, WakeSource, WakeTriggers};
 use crate::{
-    clock::{Clock, RtcClock},
-    interrupt::{self, InterruptHandler},
-    peripherals::{Interrupt, LPWR},
+    clock::RtcClock,
+    peripherals::LPWR,
     system::{Cpu, SleepSource},
     time::Duration,
 };
+#[cfg(not(esp32c5))]
+use crate::{
+    interrupt::{self, InterruptHandler},
+    peripherals::Interrupt,
+};
 // only include sleep where it's been implemented
-#[cfg(any(esp32, esp32s2, esp32s3, esp32c3, esp32c6, esp32c2, esp32h2))]
+#[cfg(sleep_driver_supported)]
 pub mod sleep;
 
 #[cfg_attr(esp32, path = "rtc/esp32.rs")]
 #[cfg_attr(esp32c2, path = "rtc/esp32c2.rs")]
 #[cfg_attr(esp32c3, path = "rtc/esp32c3.rs")]
+#[cfg_attr(esp32c5, path = "rtc/esp32c5.rs")]
 #[cfg_attr(esp32c6, path = "rtc/esp32c6.rs")]
 #[cfg_attr(esp32h2, path = "rtc/esp32h2.rs")]
 #[cfg_attr(esp32s2, path = "rtc/esp32s2.rs")]
@@ -136,8 +142,9 @@ pub mod sleep;
 pub(crate) mod rtc;
 
 cfg_if::cfg_if! {
-    if #[cfg(any(esp32c6, esp32h2))] {
+    if #[cfg(any(esp32c6, esp32h2, esp32c5))] {
         use crate::peripherals::LP_WDT;
+        #[cfg(not(esp32c5))]
         use crate::peripherals::LP_TIMER;
         use crate::peripherals::LP_AON;
     } else {
@@ -188,43 +195,6 @@ bitflags::bitflags! {
     }
 }
 
-/// Clock source to be calibrated using `rtc_clk_cal` function
-#[allow(unused)]
-#[cfg(not(any(esp32c6, esp32h2)))]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum RtcCalSel {
-    /// Currently selected RTC SLOW_CLK
-    RtcMux      = 0,
-    /// Internal 8 MHz RC oscillator, divided by 256
-    _8mD256     = 1,
-    /// External 32 KHz XTAL
-    _32kXtal    = 2,
-    /// Internal 150 KHz RC oscillator
-    #[cfg(not(esp32))]
-    InternalOsc = 3,
-}
-
-/// Clock source to be calibrated using `rtc_clk_cal` function
-#[cfg(any(esp32c6, esp32h2))]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum RtcCalSel {
-    /// Currently selected RTC SLOW_CLK
-    RtcMux      = -1,
-    /// Internal 150kHz RC oscillator
-    RcSlow      = 0,
-    /// External 32kHz XTAL, as one type of 32k clock
-    _32kXtal    = 1,
-    /// Internal 32kHz RC oscillator, as one type of 32k clock
-    _32kRc      = 2,
-    /// External slow clock signal input by lp_pad_gpio0, as one type of 32k
-    /// clock
-    _32kOscSlow = 3,
-    /// Internal MHz-range RC oscillator
-    RcFast,
-}
-
 /// Low-power Management
 pub struct Rtc<'d> {
     _inner: LPWR<'d>,
@@ -248,12 +218,8 @@ impl<'d> Rtc<'d> {
         }
     }
 
-    /// Return estimated XTAL frequency in MHz.
-    pub fn estimate_xtal_frequency(&mut self) -> u32 {
-        RtcClock::estimate_xtal_frequency()
-    }
-
     /// Get the time since boot in the raw register units.
+    #[cfg(not(esp32c5))]
     fn time_since_boot_raw(&self) -> u64 {
         let rtc_cntl = LP_TIMER::regs();
 
@@ -287,15 +253,19 @@ impl<'d> Rtc<'d> {
         ((h as u64) << 32) | (l as u64)
     }
 
-    /// Get the time since boot.
-    pub fn time_since_boot(&self) -> Duration {
+    /// Get the time elapsed since the last power-on reset.
+    ///
+    /// It should be noted that any reset or sleep, other than a power-up reset, will not stop or
+    /// reset the RTC timer.
+    #[cfg(not(esp32c5))]
+    pub fn time_since_power_up(&self) -> Duration {
         Duration::from_micros(
-            self.time_since_boot_raw() * 1_000_000
-                / RtcClock::slow_freq().frequency().as_hz() as u64,
+            self.time_since_boot_raw() * 1_000_000 / RtcClock::slow_freq().as_hz() as u64,
         )
     }
 
     /// Read the current value of the boot time registers in microseconds.
+    #[cfg(not(esp32c5))]
     fn boot_time_us(&self) -> u64 {
         // For more info on about how RTC setting works and what it has to do with boot time, see https://github.com/esp-rs/esp-hal/pull/1883
 
@@ -321,6 +291,7 @@ impl<'d> Rtc<'d> {
     }
 
     /// Set the current value of the boot time registers in microseconds.
+    #[cfg(not(esp32c5))]
     fn set_boot_time_us(&self, boot_time_us: u64) {
         // Please see `boot_time_us` for documentation on registers and peripherals
         // used for certain SOCs.
@@ -360,10 +331,11 @@ impl<'d> Rtc<'d> {
     /// let weekday_in_new_york = now.to_zoned(TZ.clone()).weekday();
     /// # {after_snippet}
     /// ```
+    #[cfg(not(esp32c5))]
     pub fn current_time_us(&self) -> u64 {
         // Current time is boot time + time since boot
 
-        let rtc_time_us = self.time_since_boot().as_micros();
+        let rtc_time_us = self.time_since_power_up().as_micros();
         let boot_time_us = self.boot_time_us();
         let wrapped_boot_time_us = u64::MAX - boot_time_us;
 
@@ -378,11 +350,12 @@ impl<'d> Rtc<'d> {
     }
 
     /// Set the current time in microseconds.
+    #[cfg(not(esp32c5))]
     pub fn set_current_time_us(&self, current_time_us: u64) {
         // Current time is boot time + time since boot (rtc time)
         // So boot time = current time - time since boot (rtc time)
 
-        let rtc_time_us = self.time_since_boot().as_micros();
+        let rtc_time_us = self.time_since_power_up().as_micros();
         if current_time_us < rtc_time_us {
             // An overflow would happen if we subtracted rtc_time_us from current_time_us.
             // To work around this, we can wrap around u64::MAX by subtracting the
@@ -403,7 +376,7 @@ impl<'d> Rtc<'d> {
     ///
     /// You can use the [`#[esp_hal::ram(persistent)]`][procmacros::ram]
     /// attribute to persist a variable though deep sleep.
-    #[cfg(any(esp32, esp32s2, esp32s3, esp32c3, esp32c6, esp32c2, esp32h2))]
+    #[cfg(sleep_deep_sleep)]
     pub fn sleep_deep(&mut self, wake_sources: &[&dyn WakeSource]) -> ! {
         let config = RtcSleepConfig::deep();
         self.sleep(&config, wake_sources);
@@ -411,7 +384,7 @@ impl<'d> Rtc<'d> {
     }
 
     /// Enter light sleep and wake with the provided `wake_sources`.
-    #[cfg(any(esp32, esp32s2, esp32s3, esp32c3, esp32c6, esp32c2, esp32h2))]
+    #[cfg(sleep_light_sleep)]
     pub fn sleep_light(&mut self, wake_sources: &[&dyn WakeSource]) {
         let config = RtcSleepConfig::default();
         self.sleep(&config, wake_sources);
@@ -419,7 +392,7 @@ impl<'d> Rtc<'d> {
 
     /// Enter sleep with the provided `config` and wake with the provided
     /// `wake_sources`.
-    #[cfg(any(esp32, esp32s2, esp32s3, esp32c3, esp32c6, esp32c2, esp32h2))]
+    #[cfg(sleep_driver_supported)]
     pub fn sleep(&mut self, config: &RtcSleepConfig, wake_sources: &[&dyn WakeSource]) {
         let mut config = *config;
         let mut wakeup_triggers = WakeTriggers::default();
@@ -439,7 +412,6 @@ impl<'d> Rtc<'d> {
     ///
     /// If you need to permanently disable the ROM bootloader messages, you'll
     /// need to set the corresponding eFuse.
-    #[cfg(any(esp32s3, esp32h2))]
     pub fn disable_rom_message_printing(&self) {
         // Corresponding documentation:
         // ESP32-S3: TRM v1.5 chapter 8.3
@@ -455,6 +427,7 @@ impl<'d> Rtc<'d> {
     /// Note that this will replace any previously registered interrupt
     /// handlers.
     #[instability::unstable]
+    #[cfg(not(esp32c5))]
     pub fn set_interrupt_handler(&mut self, handler: InterruptHandler) {
         cfg_if::cfg_if! {
             if #[cfg(any(esp32c6, esp32h2))] {
@@ -466,14 +439,14 @@ impl<'d> Rtc<'d> {
         for core in crate::system::Cpu::other() {
             crate::interrupt::disable(core, interrupt);
         }
-        unsafe { interrupt::bind_interrupt(interrupt, handler.handler()) };
-        unwrap!(interrupt::enable(interrupt, handler.priority()));
+        interrupt::bind_handler(interrupt, handler);
     }
 }
 
 impl crate::private::Sealed for Rtc<'_> {}
 
 #[instability::unstable]
+#[cfg(not(esp32c5))]
 impl crate::interrupt::InterruptConfigurable for Rtc<'_> {
     fn set_interrupt_handler(&mut self, handler: InterruptHandler) {
         self.set_interrupt_handler(handler);
@@ -581,7 +554,15 @@ impl Rwdt {
     /// Feed the watchdog timer.
     pub fn feed(&mut self) {
         self.set_write_protection(false);
-        LP_WDT::regs().wdtfeed().write(|w| w.wdt_feed().set_bit());
+        LP_WDT::regs().wdtfeed().write(|w| {
+            cfg_if::cfg_if! {
+                if #[cfg(esp32c5)] {
+                    w.rtc_wdt_feed().set_bit()
+                } else {
+                    w.wdt_feed().set_bit()
+                }
+            }
+        });
         self.set_write_protection(true);
     }
 
@@ -641,7 +622,7 @@ impl Rwdt {
         };
 
         #[cfg(not(esp32))]
-        let timeout_raw = timeout_raw >> (1 + Efuse::rwdt_multiplier());
+        let timeout_raw = timeout_raw >> (1 + crate::efuse::Efuse::rwdt_multiplier());
 
         config_reg.modify(|_, w| unsafe { w.hold().bits(timeout_raw) });
 
@@ -721,7 +702,7 @@ pub fn wakeup_cause() -> SleepSource {
     cfg_if::cfg_if! {
         if #[cfg(esp32)] {
             let wakeup_cause_bits = LPWR::regs().wakeup_state().read().wakeup_cause().bits() as u32;
-        } else if #[cfg(any(esp32c6, esp32h2))] {
+        } else if #[cfg(any(esp32c5, esp32c6, esp32h2))] {
             let wakeup_cause_bits = crate::peripherals::PMU::regs()
                 .slp_wakeup_status0()
                 .read()

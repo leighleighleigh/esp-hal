@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `global-allocator` Cargo feature to opt in to the `#[global_allocator]`, this feature is enabled by default. (#4703)
+- Support for ESP32-C5 (#4884)
 
 ### Changed
 
 
 ### Fixed
 
+- Fixed arithmetic overflow in tracking total amount of allocated/freed memory (#4783)
 
 ### Removed
 
@@ -64,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `esp_alloc::HEAP.stats()` can now be used to get heap usage informations (#2137)
+- `esp_alloc::HEAP.stats()` can now be used to get heap usage information (#2137)
 
 ### Changed
 

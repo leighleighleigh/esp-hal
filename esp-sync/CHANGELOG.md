@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Initial ESP32-C5 support (#4859)
 
 ### Changed
 
+- Added `#[inline]` attributes to ensure better codegen (#4627)
 
 ### Fixed
 

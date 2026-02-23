@@ -52,10 +52,7 @@ pub(super) static mut G_COEX_ADAPTER_FUNCS: crate::sys::include::coex_adapter_fu
 #[cfg(coex)]
 #[ram]
 unsafe extern "C" fn xtal_freq_get_wrapper() -> i32 {
-    use esp_hal::clock::Clock;
-
-    let xtal = crate::hal::clock::RtcClock::xtal_freq();
-    xtal.mhz() as i32
+    crate::hal::clock::Clocks::get().xtal_clock.as_mhz() as i32
 }
 
 #[cfg(coex)]
@@ -169,13 +166,13 @@ pub(crate) static __ESP_RADIO_G_WIFI_OSI_FUNCS: wifi_osi_funcs_t = wifi_osi_func
     _get_random: Some(get_random),
     _get_time: Some(get_time),
     _random: Some(random),
-    #[cfg(feature = "sys-logs")]
+    #[cfg(feature = "print-logs-from-driver")]
     _log_write: Some(log_write),
-    #[cfg(not(feature = "sys-logs"))]
+    #[cfg(not(feature = "print-logs-from-driver"))]
     _log_write: None,
-    #[cfg(feature = "sys-logs")]
+    #[cfg(feature = "print-logs-from-driver")]
     _log_writev: Some(log_writev),
-    #[cfg(not(feature = "sys-logs"))]
+    #[cfg(not(feature = "print-logs-from-driver"))]
     _log_writev: None,
     _log_timestamp: Some(log_timestamp),
     _malloc_internal: Some(malloc_internal),
@@ -205,7 +202,7 @@ pub(crate) static __ESP_RADIO_G_WIFI_OSI_FUNCS: wifi_osi_funcs_t = wifi_osi_func
     _coex_schm_interval_get: Some(coex_schm_interval_get),
     _coex_schm_curr_period_get: Some(coex_schm_curr_period_get),
     _coex_schm_curr_phase_get: Some(coex_schm_curr_phase_get),
-    #[cfg(any(esp32c3, esp32c2, esp32c6, esp32h2, esp32s3, esp32s2))]
+    #[cfg(any(esp32c3, esp32c2, esp32c5, esp32c6, esp32h2, esp32s3, esp32s2))]
     _slowclk_cal_get: Some(slowclk_cal_get),
     #[cfg(any(esp32, esp32s2))]
     _phy_common_clock_disable: Some(os_adapter_chip_specific::phy_common_clock_disable),
@@ -213,11 +210,11 @@ pub(crate) static __ESP_RADIO_G_WIFI_OSI_FUNCS: wifi_osi_funcs_t = wifi_osi_func
     _phy_common_clock_enable: Some(os_adapter_chip_specific::phy_common_clock_enable),
     _coex_register_start_cb: Some(coex_register_start_cb),
 
-    #[cfg(esp32c6)]
+    #[cfg(any(esp32c6, esp32c5))]
     _regdma_link_set_write_wait_content: Some(
         os_adapter_chip_specific::regdma_link_set_write_wait_content_dummy,
     ),
-    #[cfg(esp32c6)]
+    #[cfg(any(esp32c6, esp32c5))]
     _sleep_retention_find_link_by_id: Some(
         os_adapter_chip_specific::sleep_retention_find_link_by_id_dummy,
     ),

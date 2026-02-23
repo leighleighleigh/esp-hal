@@ -69,3 +69,41 @@ Configuration methods
 now return `ConfigError` instead of `Error`.
 Corresponding enum variants have been removed from `Error`, and some variants
 that are now part of `ConfigError` have been renamed.
+
+### RMT data type changes
+
+Support for `Into<PulseCode>` and `From<PulseCode>` has been removed from Tx and Rx methods, respectively.
+Instead, buffers must now contain `PulseCode` directly.
+The corresponding generic argument has also been removed from `TxTransaction` and `RxTransaction`:
+
+```diff
+-let tx_data: [u32; 8] = todo!();
+-let mut rx_data: [u32; 8] = [0u32; 8];
+-let tx_transaction: TxTransaction<'_, '_, u32> = tx_channel.transmit(&tx_data)?;
+-let rx_transaction: RxTransaction<'_, '_, u32> = rx_channel.receive(&mut rx_data)?;
++let tx_data: [PulseCode; 8] = todo!();
++let mut rx_data: [PulseCode; 8] = [PulseCode::default(); 8];
++let tx_transaction: TxTransaction<'_, '_> = tx_channel.transmit(&tx_data)?;
++let rx_transaction: RxTransaction<'_, '_> = rx_channel.receive(&mut rx_data)?;
+```
+
+## SHA Changes
+
+The `ShaDigest` type now requires exclusive access to the SHA peripheral to prevent unsound concurrent access. If you were manually constructing `ShaDigest` instances (not using `Sha::start()` or `Sha::start_owned()`), you need to use a mutable reference:
+
+```diff
+ let mut sha = Sha::new(peripherals.SHA);
+-let sha_ref = &sha;
++let sha_ref = &mut sha;
+ let digest = ShaDigest::<Sha256, _>::new(sha_ref);
+```
+
+The recommended `Sha::start()` and `Sha::start_owned()` methods already require `&mut self`, so typical usage is unaffected.
+
+## Clock changes
+
+The `RtcClock::xtal_freq()` function and the `XtalClock` enum have been removed. The currently recommended way to access the crystal clock frequency is through the `Clocks` struct, which returns a `Rate` value:
+
+```rust
+let xtal_clock = esp_hal::clock::Clocks::get().xtal_clock;
+```

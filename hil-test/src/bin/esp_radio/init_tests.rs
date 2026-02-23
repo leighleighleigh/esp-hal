@@ -10,14 +10,11 @@ mod init_tests {
     use esp_hal::xtensa_lx::interrupt::free as interrupt_free;
     use esp_hal::{
         clock::CpuClock,
-        interrupt::{
-            Priority,
-            software::{SoftwareInterrupt, SoftwareInterruptControl},
-        },
-        peripherals::{Peripherals, TIMG0},
+        interrupt::{Priority, software::SoftwareInterruptControl},
+        peripherals::Peripherals,
         timer::timg::TimerGroup,
     };
-    #[cfg(soc_has_bt)]
+    #[cfg(bt_driver_supported)]
     use esp_radio::ble::controller::BleConnector;
     #[cfg(soc_has_wifi)]
     use esp_radio::wifi::WifiError;
@@ -30,12 +27,7 @@ mod init_tests {
     async fn try_init(
         signal: &'static Signal<CriticalSectionRawMutex, Option<WifiError>>,
         wifi_peripheral: WIFI<'static>,
-        timer: TIMG0<'static>,
-        sw_int0: SoftwareInterrupt<'static, 0>,
     ) {
-        let timg0 = TimerGroup::new(timer);
-        esp_rtos::start(timg0.timer0, sw_int0);
-
         match esp_radio::wifi::new(wifi_peripheral, Default::default()) {
             Ok(_) => signal.signal(None),
             Err(err) => signal.signal(Some(err)),
@@ -49,6 +41,9 @@ mod init_tests {
         let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
         esp_hal::init(config)
     }
+
+    // Test we get an error when attempting to initialize esp-radio with interrupts
+    // disabled in common ways
 
     #[test]
     #[cfg(soc_has_wifi)]
@@ -99,14 +94,12 @@ mod init_tests {
 
         let spawner = executor_core0.start(Priority::Priority1);
 
+        let timg0 = TimerGroup::new(p.TIMG0);
+        esp_rtos::start(timg0.timer0, sw_ints.software_interrupt0);
+
         let signal = mk_static!(Signal<CriticalSectionRawMutex, Option<WifiError>>, Signal::new());
 
-        spawner.must_spawn(try_init(
-            signal,
-            p.WIFI,
-            p.TIMG0,
-            sw_ints.software_interrupt0,
-        ));
+        spawner.must_spawn(try_init(signal, p.WIFI));
 
         let res = signal.wait().await;
 
@@ -130,7 +123,7 @@ mod init_tests {
 
     #[test]
     #[cfg(soc_has_wifi)]
-    #[cfg(soc_has_bt)]
+    #[cfg(bt_driver_supported)]
     fn test_init_and_drop(mut p: Peripherals) {
         let timg0: TimerGroup<'_, _> = TimerGroup::new(p.TIMG0);
         let sw_ints = SoftwareInterruptControl::new(p.SW_INTERRUPT);
@@ -149,7 +142,7 @@ mod init_tests {
 
     #[test]
     #[cfg(soc_has_wifi)]
-    #[cfg(soc_has_bt)]
+    #[cfg(bt_driver_supported)]
     fn test_create_ble_wifi_drop_ble_wifi_create_wifi_ble(mut p: Peripherals) {
         let timg0: TimerGroup<'_, _> = TimerGroup::new(p.TIMG0);
         let sw_ints = SoftwareInterruptControl::new(p.SW_INTERRUPT);

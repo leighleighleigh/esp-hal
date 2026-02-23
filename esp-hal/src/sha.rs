@@ -90,7 +90,13 @@
 
 #![allow(deprecated, reason = "generic_array 0.14 has been deprecated")]
 
-use core::{borrow::Borrow, convert::Infallible, marker::PhantomData, mem::size_of, ptr::NonNull};
+use core::{
+    borrow::BorrowMut,
+    convert::Infallible,
+    marker::PhantomData,
+    mem::size_of,
+    ptr::NonNull,
+};
 
 /// Re-export digest for convenience
 pub use digest::Digest;
@@ -331,9 +337,7 @@ impl crate::private::Sealed for Sha<'_> {}
 impl crate::interrupt::InterruptConfigurable for Sha<'_> {
     fn set_interrupt_handler(&mut self, handler: crate::interrupt::InterruptHandler) {
         self.sha.disable_peri_interrupt();
-
-        self.sha.bind_peri_interrupt(handler.handler());
-        self.sha.enable_peri_interrupt(handler.priority());
+        self.sha.bind_peri_interrupt(handler);
     }
 }
 
@@ -346,7 +350,7 @@ impl crate::interrupt::InterruptConfigurable for Sha<'_> {
 ///
 /// This implementation might fail after u32::MAX/8 bytes, to increase please
 /// see ::finish() length/self.cursor usage
-pub struct ShaDigest<'d, A, S: Borrow<Sha<'d>>> {
+pub struct ShaDigest<'d, A, S: BorrowMut<Sha<'d>>> {
     sha: S,
     state: DigestState,
     phantom: PhantomData<(&'d (), A)>,
@@ -387,13 +391,13 @@ impl DigestState {
     }
 }
 
-impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> ShaDigest<'d, A, S> {
+impl<'d, A: ShaAlgorithm, S: BorrowMut<Sha<'d>>> ShaDigest<'d, A, S> {
     /// Creates a new digest
     #[allow(unused_mut)]
     pub fn new(mut sha: S) -> Self {
         #[cfg(not(esp32))]
         // Setup SHA Mode.
-        sha.borrow()
+        sha.borrow_mut()
             .sha
             .register_block()
             .mode()
@@ -408,9 +412,9 @@ impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> ShaDigest<'d, A, S> {
 
     /// Restores a previously saved digest.
     #[cfg(not(esp32))]
-    pub fn restore(sha: S, ctx: &mut Context<A>) -> Self {
+    pub fn restore(mut sha: S, ctx: &mut Context<A>) -> Self {
         // Setup SHA Mode.
-        sha.borrow()
+        sha.borrow_mut()
             .sha
             .register_block()
             .mode()
@@ -418,12 +422,16 @@ impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> ShaDigest<'d, A, S> {
 
         // Restore the message buffer
         unsafe {
-            core::ptr::copy_nonoverlapping(ctx.buffer.as_ptr(), m_mem(&sha.borrow().sha, 0), 32);
+            core::ptr::copy_nonoverlapping(
+                ctx.buffer.as_ptr(),
+                m_mem(&sha.borrow_mut().sha, 0),
+                32,
+            );
         }
 
         // Restore previously saved hash
         ctx.state.alignment_helper.volatile_write_regset(
-            h_mem(&sha.borrow().sha, 0),
+            h_mem(&sha.borrow_mut().sha, 0),
             &ctx.saved_digest,
             64,
         );
@@ -442,7 +450,7 @@ impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> ShaDigest<'d, A, S> {
 
     /// Updates the SHA digest with the provided data buffer.
     pub fn update<'a>(&mut self, incoming: &'a [u8]) -> nb::Result<&'a [u8], Infallible> {
-        self.sha.borrow().update(&mut self.state, incoming)
+        self.sha.borrow_mut().update(&mut self.state, incoming)
     }
 
     /// Finish of the calculation (if not already) and copy result to output
@@ -453,7 +461,7 @@ impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> ShaDigest<'d, A, S> {
     /// [ShaAlgorithm::DIGEST_LENGTH], but smaller inputs can be given to
     /// get a "short hash"
     pub fn finish(&mut self, output: &mut [u8]) -> nb::Result<(), Infallible> {
-        self.sha.borrow().finish(&mut self.state, output)
+        self.sha.borrow_mut().finish(&mut self.state, output)
     }
 
     /// Save the current state of the digest for later continuation.
@@ -467,7 +475,7 @@ impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> ShaDigest<'d, A, S> {
 
         // Save the content of the current hash.
         self.state.alignment_helper.volatile_read_regset(
-            h_mem(&self.sha.borrow().sha, 0),
+            h_mem(&self.sha.borrow_mut().sha, 0),
             &mut context.saved_digest,
             64,
         );
@@ -475,7 +483,7 @@ impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> ShaDigest<'d, A, S> {
         // Save the content of the current (probably partially written) message.
         unsafe {
             core::ptr::copy_nonoverlapping(
-                m_mem(&self.sha.borrow().sha, 0),
+                m_mem(&self.sha.borrow_mut().sha, 0),
                 context.buffer.as_mut_ptr(),
                 32,
             );
@@ -554,13 +562,13 @@ pub trait ShaAlgorithm: crate::private::Sealed {
 
 /// Note: digest has a blanket trait implementation for [digest::Digest] for any
 /// element that implements FixedOutput + Default + Update + HashMarker
-impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> digest::HashMarker for ShaDigest<'d, A, S> {}
+impl<'d, A: ShaAlgorithm, S: BorrowMut<Sha<'d>>> digest::HashMarker for ShaDigest<'d, A, S> {}
 
-impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> digest::OutputSizeUser for ShaDigest<'d, A, S> {
+impl<'d, A: ShaAlgorithm, S: BorrowMut<Sha<'d>>> digest::OutputSizeUser for ShaDigest<'d, A, S> {
     type OutputSize = A::DigestOutputSize;
 }
 
-impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> digest::Update for ShaDigest<'d, A, S> {
+impl<'d, A: ShaAlgorithm, S: BorrowMut<Sha<'d>>> digest::Update for ShaDigest<'d, A, S> {
     fn update(&mut self, mut remaining: &[u8]) {
         while !remaining.is_empty() {
             remaining = nb::block!(Self::update(self, remaining)).unwrap();
@@ -568,7 +576,7 @@ impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> digest::Update for ShaDigest<'d, A
     }
 }
 
-impl<'d, A: ShaAlgorithm, S: Borrow<Sha<'d>>> digest::FixedOutput for ShaDigest<'d, A, S> {
+impl<'d, A: ShaAlgorithm, S: BorrowMut<Sha<'d>>> digest::FixedOutput for ShaDigest<'d, A, S> {
     fn finalize_into(mut self, out: &mut digest::Output<Self>) {
         nb::block!(self.finish(out)).unwrap();
     }
@@ -750,6 +758,7 @@ fn m_mem(sha: &crate::peripherals::SHA<'_>, index: usize) -> *mut u32 {
     }
 }
 
+#[derive(Clone)]
 struct ShaOperation {
     operation: ShaOperationKind,
     // Buffer containing pieced-together message bytes, not necessarily a complete block. Not a fat
@@ -802,7 +811,7 @@ const BLOCKING_SHA_VTABLE: VTable<ShaOperation> = VTable {
         // manner and so they can't be cancelled.
     },
     stop: |driver| {
-        // Drop the SHA driver to conserve power when there is nothig to do (or when the driver was
+        // Drop the SHA driver to conserve power when there is nothing to do (or when the driver was
         // stopped).
         let driver = unsafe { ShaBackend::from_raw(driver) };
         driver.deinitialize()
@@ -919,6 +928,23 @@ impl<'d> ShaBackend<'d> {
         }
     }
 
+    #[cfg(not(esp32))]
+    fn restore_state(driver: &mut Sha<'_>, item: &ShaOperation) {
+        driver
+            .sha
+            .register_block()
+            .mode()
+            .write(|w| unsafe { w.mode().bits(item.state.algorithm.mode_bits()) });
+
+        // Restore previously saved hash. Don't bother on first_run, the start operation will
+        // use a hard-coded initial hash.
+        if !item.state.first_run {
+            for (i, reg) in driver.sha.register_block().h_mem_iter().enumerate() {
+                reg.write(|w| unsafe { w.bits(item.hw_state.as_ref()[i]) });
+            }
+        }
+    }
+
     fn process_update(&mut self, item: &mut ShaOperation) -> Poll {
         let driver = if let DriverState::Initialized(sha) = &mut self.driver {
             sha
@@ -934,28 +960,20 @@ impl<'d> ShaBackend<'d> {
             };
 
             #[cfg(not(esp32))]
-            driver
-                .sha
-                .register_block()
-                .mode()
-                .write(|w| unsafe { w.mode().bits(item.state.algorithm.mode_bits()) });
+            Self::restore_state(driver, item);
 
-            // Restore previously saved hash. Don't bother on first_run, the start operation will
-            // use a hard-coded initial hash.
-            #[cfg(not(esp32))]
-            if !item.state.first_run {
-                for (i, reg) in driver.sha.register_block().h_mem_iter().enumerate() {
-                    reg.write(|w| unsafe { w.bits(item.hw_state.as_ref()[i]) });
-                }
-            }
-
-            // Write the buffered bytes. This is less than a block, and we don't count these bytes
-            // in the message.
+            let buffered = unsafe {
+                core::slice::from_raw_parts(item.buffer.as_ptr(), item.buffered_bytes as usize)
+            };
+            debug!(
+                "update: restored state with {} buffered bytes",
+                buffered.len()
+            );
 
             // This is never supposed to block or even start processing, we're writing an incomplete
             // block into idle hardware.
-            let buffered = NonNull::slice_from_raw_parts(item.buffer, item.buffered_bytes as usize);
-            nb::block!(driver.write_data(&mut item.state, unsafe { buffered.as_ref() })).unwrap();
+            debug_assert!(buffered.len() < item.state.algorithm.chunk_length());
+            nb::block!(driver.write_data(&mut item.state, buffered)).unwrap();
         }
 
         let remaining_message =
@@ -999,15 +1017,22 @@ impl<'d> ShaBackend<'d> {
 
         // We can only process complete blocks before finalization. Write back the unprocessed bytes
         // to the item's buffer.
-        unsafe {
-            // Safety: the frontend ensures that the buffer is large enough to hold the remaining
-            // message.
-            core::ptr::copy_nonoverlapping(
-                remaining_message.as_ptr(),
-                item.buffer.as_ptr(),
-                remaining_message.len(),
+        if !remaining_message.is_empty() {
+            debug!(
+                "Writing back {} unprocessed bytes to buffer",
+                remaining_message.len()
             );
+            unsafe {
+                // Safety: the frontend ensures that the buffer is large enough to hold the
+                // remaining message.
+                core::ptr::copy_nonoverlapping(
+                    remaining_message.as_ptr(),
+                    item.buffer.as_ptr(),
+                    remaining_message.len(),
+                );
+            }
         }
+        item.buffered_bytes = remaining_message.len() as u8;
         self.processing_state.message_partially_processed = false;
 
         Poll::Ready(Status::Completed)
@@ -1022,29 +1047,23 @@ impl<'d> ShaBackend<'d> {
 
         if !self.processing_state.message_partially_processed {
             // We don't need to track the byte count here, just that we've restored the hash and
-            // written the buffered data.
+            // written the buffered data. `process_finalize` ignores `message_bytes_processed`.
             self.processing_state.message_partially_processed = true;
 
             #[cfg(not(esp32))]
-            driver
-                .sha
-                .register_block()
-                .mode()
-                .write(|w| unsafe { w.mode().bits(item.state.algorithm.mode_bits()) });
+            Self::restore_state(driver, item);
 
-            // Restore previously saved hash. Don't bother on first_run, the start operation will
-            // use a hard-coded initial hash.
-            #[cfg(not(esp32))]
-            if !item.state.first_run {
-                for (i, reg) in driver.sha.register_block().h_mem_iter().enumerate() {
-                    reg.write(|w| unsafe { w.bits(item.hw_state.as_ref()[i]) });
-                }
-            }
+            let buffered = unsafe { item.message.as_ref() };
+            debug!(
+                "finalize: restored state with {} buffered bytes",
+                buffered.len()
+            );
 
             // This is never supposed to block or even start processing, we're writing an incomplete
             // block into idle hardware.
-            nb::block!(driver.write_data(&mut item.state, unsafe { item.message.as_ref() }))
-                .unwrap();
+            debug_assert!(buffered.len() < item.state.algorithm.chunk_length());
+
+            nb::block!(driver.write_data(&mut item.state, buffered)).unwrap();
         }
 
         // Safety: caller must ensure that result buffer is large enough.
@@ -1095,6 +1114,7 @@ enum SoftwareHasher {
 }
 
 // Common implementation, to be hidden behind algo-dependent contexts.
+#[cfg_attr(not(esp32), derive(Clone))]
 struct ShaContext<const CHUNK_BYTES: usize, const DIGEST_WORDS: usize> {
     frontend: WorkQueueFrontend<ShaOperation>,
     buffer: [u8; CHUNK_BYTES],
@@ -1155,6 +1175,11 @@ impl<const CHUNK_BYTES: usize, const DIGEST_WORDS: usize> ShaContext<CHUNK_BYTES
     }
 
     fn update<'t>(&'t mut self, data: &'t [u8]) -> ShaHandle<'t> {
+        debug!(
+            "Update {:?} with {} bytes",
+            self.frontend.data_mut().state.algorithm,
+            data.len()
+        );
         #[cfg(esp32)]
         if let Some(hasher) = self.use_software.as_mut() {
             Self::update_using_software(hasher, data);
@@ -1201,6 +1226,11 @@ impl<const CHUNK_BYTES: usize, const DIGEST_WORDS: usize> ShaContext<CHUNK_BYTES
     }
 
     fn finalize<'t>(&'t mut self, result: &mut [u8]) -> ShaHandle<'t> {
+        debug!(
+            "Finalize {:?} into buffer of {} bytes",
+            self.frontend.data_mut().state.algorithm,
+            result.len()
+        );
         #[cfg(esp32)]
         if let Some(hasher) = self.use_software.as_mut() {
             Self::finalize_using_software(hasher, result);
@@ -1312,6 +1342,7 @@ pub enum FinalizeError {
 macro_rules! impl_worker_context {
     ($name:ident, $full_name:literal, $algo:expr, $digest_len:literal ) => {
         #[doc = concat!("A ", $full_name, " context.")]
+        #[cfg_attr(not(esp32), derive(Clone))]
         pub struct $name(ShaContext<{ $algo.chunk_length() }, { $algo.digest_length() / 4 }>);
 
         impl $name {

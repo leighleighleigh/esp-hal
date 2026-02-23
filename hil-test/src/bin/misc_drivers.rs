@@ -4,7 +4,7 @@
 //! RNG Tests
 //! System Timer Tests
 //! TWAI Tests
-//% CHIPS: esp32 esp32c2 esp32c3 esp32c6 esp32h2 esp32s2 esp32s3
+//% CHIPS: esp32 esp32c2 esp32c3 esp32c5 esp32c6 esp32h2 esp32s2 esp32s3
 //% FEATURES: unstable embassy
 
 #![no_std]
@@ -12,7 +12,7 @@
 
 use hil_test as _;
 
-#[cfg(not(any(esp32c2, esp32c3)))]
+#[cfg(pcnt_driver_supported)]
 #[embedded_test::tests(default_timeout = 3)]
 mod pcnt {
     use esp_hal::{
@@ -48,7 +48,7 @@ mod pcnt {
     fn test_increment_on_pos_edge(ctx: Context<'static>) {
         let unit = ctx.pcnt.unit0;
 
-        // Setup channel 0 to increment the count when gpio2 does LOW -> HIGH
+        // Setup channel 0 to increment the count when input changes LOW -> HIGH
         unit.channel0.set_edge_signal(Input::new(
             ctx.input,
             InputConfig::default().with_pull(Pull::Down),
@@ -87,7 +87,7 @@ mod pcnt {
     fn test_increment_on_neg_edge(ctx: Context<'static>) {
         let unit = ctx.pcnt.unit1;
 
-        // Setup channel 0 to increment the count when gpio2 does LOW -> HIGH
+        // Setup channel 0 to increment the count when input changes HIGH -> LOW
         unit.channel0.set_edge_signal(Input::new(
             ctx.input,
             InputConfig::default().with_pull(Pull::Up),
@@ -356,11 +356,15 @@ mod pcnt {
     }
 }
 
+#[cfg(rng_driver_supported)]
 #[embedded_test::tests(default_timeout = 5)]
 mod rng {
-    use esp_hal::rng::{Rng, Trng, TrngSource};
+    use esp_hal::rng::Rng;
+    #[cfg(rng_trng_supported)]
+    use esp_hal::rng::{Trng, TrngSource};
 
     #[test]
+    #[cfg(rng_trng_supported)]
     fn test_trng_without_source_is_error() {
         assert!(Trng::try_new().is_err());
 
@@ -369,6 +373,32 @@ mod rng {
     }
 
     #[test]
+    fn test_rng_returns_random_values() {
+        let _p = esp_hal::init(Default::default());
+        let rng = Rng::new();
+
+        let mut rng_values = [0; 10];
+        rng.read(&mut rng_values);
+
+        assert!(rng_values.windows(2).any(|w| w[0] != w[1]));
+    }
+
+    #[test]
+    #[cfg(rng_trng_supported)]
+    fn test_trng_returns_random_values() {
+        let p = esp_hal::init(Default::default());
+        let _source = TrngSource::new(p.RNG, p.ADC1);
+
+        let rng = Trng::try_new().unwrap();
+
+        let mut rng_values = [0; 10];
+        rng.read(&mut rng_values);
+
+        assert!(rng_values.windows(2).any(|w| w[0] != w[1]));
+    }
+
+    #[test]
+    #[cfg(rng_trng_supported)]
     fn test_trng_source_cannot_be_disabled_while_in_use() {
         let p = esp_hal::init(Default::default());
         let source = TrngSource::new(p.RNG, p.ADC1);
@@ -386,6 +416,7 @@ mod rng {
 
     #[test]
     #[should_panic]
+    #[cfg(rng_trng_supported)]
     fn test_trng_source_cannot_be_dropped_while_in_use() {
         let p = esp_hal::init(Default::default());
         let source = TrngSource::new(p.RNG, p.ADC1);
@@ -396,6 +427,7 @@ mod rng {
     }
 
     #[test]
+    #[cfg(rng_trng_supported)]
     fn test_trng_source_can_be_dropped_if_unsafely_enabled() {
         let p = esp_hal::init(Default::default());
 
@@ -410,7 +442,7 @@ mod rng {
     }
 }
 
-#[cfg(not(esp32))]
+#[cfg(systimer_driver_supported)]
 #[embedded_test::tests(default_timeout = 3)]
 mod systimer {
     use core::cell::RefCell;
@@ -562,7 +594,7 @@ mod systimer {
     }
 }
 
-#[cfg(any(esp32, esp32c3, esp32c6, esp32h2, esp32s2, esp32s3))]
+#[cfg(twai_driver_supported)]
 mod twai {
     use embedded_can::Frame;
     use esp_hal::{
@@ -703,7 +735,7 @@ mod twai {
                 block!(ctx.twai.transmit(&frame)).unwrap();
             }
 
-            let _ = interrupt::enable(TWAI0, Priority3);
+            interrupt::enable(TWAI0, Priority3);
 
             const NUM_ASYNC_SENT_FRAMES: usize = 20;
             transmit_frames(&mut ctx, &frame, NUM_ASYNC_SENT_FRAMES).await;

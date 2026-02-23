@@ -57,6 +57,10 @@ enum Cli {
     #[cfg(feature = "report")]
     /// Generate reports from CI data.
     GenerateReport(generate_report::ReportArgs),
+    /// Tasks for checking compile tests with a local registry.
+    #[cfg(feature = "rel-check")]
+    #[clap(subcommand)]
+    RelCheck(relcheck::RelCheckCmds),
 }
 
 #[derive(Debug, Args)]
@@ -76,6 +80,10 @@ struct CiArgs {
     /// Whether to skip building documentation
     #[arg(long)]
     no_docs: bool,
+
+    /// Whether to skip checking the crates itself
+    #[arg(long)]
+    no_check_crates: bool,
 }
 
 #[derive(Debug, Args)]
@@ -224,6 +232,8 @@ fn main() -> Result<()> {
         Cli::CheckGlobalSymbols(args) => check_global_symbols(&args.chips),
         #[cfg(feature = "report")]
         Cli::GenerateReport(args) => generate_report::generate_report(&workspace, args),
+        #[cfg(feature = "rel-check")]
+        Cli::RelCheck(relcheck) => relcheck::run_rel_check(relcheck),
     }
 }
 
@@ -237,6 +247,9 @@ fn fmt_packages(workspace: &Path, args: FmtPackagesArgs) -> Result<()> {
     for package in packages {
         xtask::format_package(workspace, package, args.check, None)?;
     }
+
+    // format ymls in .github/
+    xtask::format_yml(args.check, "./.github")?;
 
     Ok(())
 }
@@ -527,22 +540,26 @@ fn run_ci_checks(workspace: &Path, args: CiArgs) -> Result<()> {
     log::info!("Running CI checks for chip: {}", args.chip);
     println!("::add-matcher::.github/rust-matchers.json");
 
+    let run_locally = !std::env::var("CI").is_ok();
+
     let mut runner = Runner::new();
 
     unsafe {
         std::env::set_var("CI", "true");
     }
 
-    runner.run("Check crates", || {
-        check_packages(
-            workspace,
-            CheckPackagesArgs {
-                packages: Package::iter().collect(),
-                chips: vec![args.chip],
-                toolchain: args.toolchain.clone(),
-            },
-        )
-    });
+    if !args.no_check_crates {
+        runner.run("Check crates", || {
+            check_packages(
+                workspace,
+                CheckPackagesArgs {
+                    packages: Package::iter().collect(),
+                    chips: vec![args.chip],
+                    toolchain: args.toolchain.clone(),
+                },
+            )
+        });
+    }
 
     if !args.no_lint {
         runner.run("Lint", || {
@@ -718,6 +735,25 @@ fn run_ci_checks(workspace: &Path, args: CiArgs) -> Result<()> {
         )
     });
 
+    if run_locally {
+        // Try-build tests
+        runner.run("Build tests", || {
+            let target_path = workspace.join("target");
+
+            tests(
+                workspace,
+                TestsArgs {
+                    chip: args.chip,
+                    repeat: 1,
+                    test: None,
+                    toolchain: None,
+                    timings: false,
+                },
+                CargoAction::Build(Some(target_path.join("tests"))),
+            )
+        });
+    }
+
     runner.finish()
 }
 
@@ -770,7 +806,7 @@ fn build_rlib(package: &str, chip: &str, target: &str) -> Result<PathBuf> {
 /// specified chips. Reports any unmangled global symbols that may pollute the
 /// global namespace.
 fn check_global_symbols(chips: &[Chip]) -> Result<()> {
-    let mut total_problematic = 0;
+    let mut total_problematic = vec![];
 
     let package = Package::EspHal; // Only esp-hal for now
 
@@ -826,13 +862,21 @@ fn check_global_symbols(chips: &[Chip]) -> Result<()> {
                 println!("{:?} {}", kind, name);
             }
 
-            total_problematic += problematic_symbols.len();
+            total_problematic.extend(
+                problematic_symbols
+                    .into_iter()
+                    .map(|(name, kind, _)| (chip, name, kind)),
+            );
         }
     }
 
-    if total_problematic > 0 {
+    if !total_problematic.is_empty() {
+        for (chip, name, kind) in total_problematic.iter() {
+            println!("{}: {} ({:?})", chip, name, kind);
+        }
         Err(anyhow::anyhow!(
-            "Found {total_problematic} unmangled global symbols across all packages/chips"
+            "Found {count} unmangled global symbols across all packages/chips",
+            count = total_problematic.len()
         ))
     } else {
         Ok(())

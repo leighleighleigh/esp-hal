@@ -18,12 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ThreadPtr` (#4559)
 - The `ipc-implementations` feature, which enables the `CompatQueue`, `CompatSemaphore` and `CompatTimer` types (#4559)
 - Chip-specific features required for the `ipc-implementations` feature (#4559)
+- Support for ESP32-C5 (#5003)
 
 ### Changed
 
 - Renamed `Scheduler` to `SchedulerImplementation` and `scheduler_impl!` to `register_scheduler_implementation!` (#4559)
 - `current_task`, `task_create` and `schedule_task_deletion` functions now work with `ThreadPtr` instead of `*mut c_void` (#4559)
 - `schedule_task_deletion` now takes an `Option` (#4559)
+- `SemaphoreHandle` is now `Send` (#4761)
 
 ### Fixed
 

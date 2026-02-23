@@ -6,7 +6,7 @@ use crate::hal::system::Cpu;
 use crate::{
     ble::InvalidConfigError,
     common_adapter::*,
-    hal::{interrupt, peripherals::Interrupt},
+    hal::{interrupt::Priority, peripherals::BT},
 };
 
 pub(crate) static mut ISR_INTERRUPT_5: (*mut c_void, *mut c_void) =
@@ -597,8 +597,16 @@ pub(crate) fn create_ble_config(config: &Config) -> esp_bt_controller_config_t {
         connect_en: config.connection,
         scan_en: config.scan,
         ble_aa_check: config.verify_access_address,
-        ble_log_mode_en: if cfg!(feature = "sys-logs") { 4095 } else { 0 },
-        ble_log_level: if cfg!(feature = "sys-logs") { 5 } else { 0 },
+        ble_log_mode_en: if cfg!(feature = "print-logs-from-driver") {
+            4095
+        } else {
+            0
+        },
+        ble_log_level: if cfg!(feature = "print-logs-from-driver") {
+            5
+        } else {
+            0
+        },
         adv_en: config.adv,
         magic: ESP_BT_CTRL_CONFIG_MAGIC_VAL,
     }
@@ -668,21 +676,12 @@ pub(crate) unsafe extern "C" fn interrupt_handler_set(
             5 => {
                 ISR_INTERRUPT_5 = (func as *mut c_void, arg as *mut c_void);
                 #[cfg(esp32c3)]
-                unwrap!(interrupt::enable(
-                    Interrupt::RWBT,
-                    interrupt::Priority::Priority1
-                ));
-                unwrap!(interrupt::enable(
-                    Interrupt::BT_BB,
-                    interrupt::Priority::Priority1
-                ));
+                BT::steal().enable_rwbt_interrupt(Priority::Priority1);
+                BT::steal().enable_bb_interrupt(Priority::Priority1);
             }
             8 => {
                 ISR_INTERRUPT_8 = (func as *mut c_void, arg as *mut c_void);
-                unwrap!(interrupt::enable(
-                    Interrupt::RWBLE,
-                    interrupt::Priority::Priority1
-                ));
+                BT::steal().enable_rwble_interrupt(Priority::Priority1);
             }
             _ => panic!("Unsupported interrupt number {}", interrupt_no),
         }

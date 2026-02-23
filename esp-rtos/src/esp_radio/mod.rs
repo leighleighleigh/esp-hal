@@ -30,13 +30,13 @@ impl esp_radio_rtos_driver::SchedulerImplementation for Scheduler {
     fn initialized(&self) -> bool {
         self.with(|scheduler| {
             if scheduler.time_driver.is_none() {
-                warn!("Trying to initialize esp-radio before starting esp-rtos");
+                error!("Trying to initialize esp-radio before starting esp-rtos");
                 return false;
             }
 
             let current_cpu = Cpu::current() as usize;
             if !scheduler.per_cpu[current_cpu].initialized {
-                warn!(
+                error!(
                     "Trying to initialize esp-radio on {:?} but esp-rtos is not running on this core",
                     current_cpu
                 );
@@ -96,10 +96,10 @@ impl esp_radio_rtos_driver::SchedulerImplementation for Scheduler {
     }
 
     fn current_task_thread_semaphore(&self) -> SemaphorePtr {
-        task::with_current_task(|task| {
-            *task.thread_local.thread_semaphore.get_or_insert_with(|| {
-                SemaphoreHandle::new(SemaphoreKind::Counting { max: 1, initial: 0 }).leak()
-            })
+        // SAFETY: `current_task` always returns a valid pointer to the current task.
+        let task = unsafe { self.current_task().as_mut() };
+        *task.thread_local.thread_semaphore.get_or_insert_with(|| {
+            SemaphoreHandle::new(SemaphoreKind::Counting { max: 1, initial: 0 }).leak()
         })
     }
 

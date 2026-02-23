@@ -6,9 +6,6 @@
 
 use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-#[cfg(esp32)]
-use crate::peripherals::TIMG0;
-
 type InnerRate = fugit::Rate<u32, 1, 1>;
 type InnerInstant = fugit::Instant<u64, 1, 1_000_000>;
 type InnerDuration = fugit::Duration<u64, 1, 1_000_000>;
@@ -96,7 +93,7 @@ impl Rate {
     }
 
     #[procmacros::doc_replace]
-    /// Convert the `Rate` to an interger number of Hz.
+    /// Convert the `Rate` to an integer number of Hz.
     ///
     /// ## Example
     ///
@@ -113,7 +110,7 @@ impl Rate {
     }
 
     #[procmacros::doc_replace]
-    /// Convert the `Rate` to an interger number of kHz.
+    /// Convert the `Rate` to an integer number of kHz.
     ///
     /// ## Example
     ///
@@ -130,7 +127,7 @@ impl Rate {
     }
 
     #[procmacros::doc_replace]
-    /// Convert the `Rate` to an interger number of MHz.
+    /// Convert the `Rate` to an integer number of MHz.
     ///
     /// ## Example
     ///
@@ -254,6 +251,10 @@ impl Instant {
     /// The timer has a 1 microsecond resolution and will wrap after
     /// # {wrap_after}
     ///
+    /// <section class="warning">
+    /// Note that this function returns an unreliable value before <code>esp_hal::init()</code> is
+    /// called. </section>
+    ///
     /// ## Example
     ///
     /// ```rust, no_run
@@ -264,7 +265,7 @@ impl Instant {
     /// ```
     #[inline]
     pub fn now() -> Self {
-        now()
+        implem::now()
     }
 
     #[inline]
@@ -473,7 +474,7 @@ impl Duration {
         #[inline]
         to self.0 {
             #[procmacros::doc_replace]
-            /// Convert the `Duration` to an interger number of microseconds.
+            /// Convert the `Duration` to an integer number of microseconds.
             ///
             /// ## Example
             ///
@@ -488,7 +489,7 @@ impl Duration {
             pub const fn as_micros(&self) -> u64;
 
             #[procmacros::doc_replace]
-            /// Convert the `Duration` to an interger number of milliseconds.
+            /// Convert the `Duration` to an integer number of milliseconds.
             ///
             /// ## Example
             ///
@@ -503,7 +504,7 @@ impl Duration {
             pub const fn as_millis(&self) -> u64;
 
             #[procmacros::doc_replace]
-            /// Convert the `Duration` to an interger number of seconds.
+            /// Convert the `Duration` to an integer number of seconds.
             ///
             /// ## Example
             ///
@@ -518,7 +519,7 @@ impl Duration {
             pub const fn as_secs(&self) -> u64;
 
             #[procmacros::doc_replace]
-            /// Convert the `Duration` to an interger number of minutes.
+            /// Convert the `Duration` to an integer number of minutes.
             ///
             /// ## Example
             ///
@@ -533,7 +534,7 @@ impl Duration {
             pub const fn as_minutes(&self) -> u64;
 
             #[procmacros::doc_replace]
-            /// Convert the `Duration` to an interger number of hours.
+            /// Convert the `Duration` to an integer number of hours.
             ///
             /// ## Example
             ///
@@ -710,10 +711,33 @@ impl core::ops::Div<Duration> for Duration {
     }
 }
 
-#[inline]
-fn now() -> Instant {
-    #[cfg(esp32)]
-    let (ticks, div) = {
+#[cfg(esp32)]
+pub(crate) mod implem {
+    use super::Instant;
+    use crate::peripherals::TIMG0;
+
+    #[cfg(feature = "rt")]
+    pub(crate) fn time_init() {
+        let apb = crate::Clocks::get().apb_clock.as_hz();
+
+        let tg0 = TIMG0::regs();
+
+        tg0.lactconfig().write(|w| unsafe { w.bits(0) });
+        tg0.lactalarmhi().write(|w| unsafe { w.bits(u32::MAX) });
+        tg0.lactalarmlo().write(|w| unsafe { w.bits(u32::MAX) });
+        tg0.lactload().write(|w| unsafe { w.load().bits(1) });
+
+        // 16 MHz counter
+        tg0.lactconfig().write(|w| {
+            unsafe { w.divider().bits((apb / 16_000_000u32) as u16) };
+            w.increase().bit(true);
+            w.autoreload().bit(true);
+            w.en().bit(true)
+        });
+    }
+
+    #[inline]
+    pub(super) fn now() -> Instant {
         // on ESP32 use LACT
         let tg0 = TIMG0::regs();
         tg0.lactupdate().write(|w| unsafe { w.update().bits(1) });
@@ -733,36 +757,27 @@ fn now() -> Instant {
         let hi = tg0.lacthi().read().bits();
 
         let ticks = ((hi as u64) << 32u64) | lo as u64;
-        (ticks, 16)
-    };
 
-    #[cfg(not(esp32))]
-    let (ticks, div) = {
-        use crate::timer::systimer::{SystemTimer, Unit};
-        // otherwise use SYSTIMER
-        let ticks = SystemTimer::unit_value(Unit::Unit0);
-        (ticks, (SystemTimer::ticks_per_second() / 1_000_000))
-    };
-
-    Instant::from_ticks(ticks / div)
+        Instant::from_ticks(ticks / 16)
+    }
 }
 
-#[cfg(all(esp32, feature = "rt"))]
-pub(crate) fn time_init() {
-    let apb = crate::Clocks::get().apb_clock.as_hz();
+#[cfg(systimer_driver_supported)]
+pub(crate) mod implem {
+    use super::Instant;
+    use crate::timer::systimer::{SystemTimer, Unit};
 
-    let tg0 = TIMG0::regs();
+    #[cfg(feature = "rt")]
+    pub(crate) fn time_init() {
+        SystemTimer::init_timestamp_scaler();
+    }
 
-    tg0.lactconfig().write(|w| unsafe { w.bits(0) });
-    tg0.lactalarmhi().write(|w| unsafe { w.bits(u32::MAX) });
-    tg0.lactalarmlo().write(|w| unsafe { w.bits(u32::MAX) });
-    tg0.lactload().write(|w| unsafe { w.load().bits(1) });
+    #[inline]
+    pub(super) fn now() -> Instant {
+        let ticks = SystemTimer::unit_value(Unit::Unit0);
 
-    // 16 MHz counter
-    tg0.lactconfig().write(|w| {
-        unsafe { w.divider().bits((apb / 16_000_000u32) as u16) };
-        w.increase().bit(true);
-        w.autoreload().bit(true);
-        w.en().bit(true)
-    });
+        let micros = SystemTimer::ticks_to_us(ticks);
+
+        Instant::from_ticks(micros)
+    }
 }
