@@ -255,7 +255,10 @@ global_asm!(
 unsafe extern "C" fn lp_core_startup() -> ! {
     unsafe {
         unsafe extern "Rust" {
+            #[cfg(any(esp32s2, esp32s3))]
             fn main();
+            #[cfg(esp32c6)]
+            fn main() -> !;
         }
 
         #[cfg(esp32c6)]
@@ -269,6 +272,8 @@ unsafe extern "C" fn lp_core_startup() -> ! {
         }
 
         main();
+
+        #[cfg(any(esp32s2, esp32s3))]
         ulp_riscv_halt();
     }
 }

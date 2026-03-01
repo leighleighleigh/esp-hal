@@ -210,11 +210,14 @@ impl LpI2c {
         // Load device address and R/W bit into FIFO
         self.write_fifo((address << 1) | OperationType::Write as u8);
 
-        self.add_cmd_lp(&mut cmd_iterator, Command::Write {
-            ack_exp: Ack::Ack,
-            ack_check_en: true,
-            length: 1_u8,
-        })?;
+        self.add_cmd_lp(
+            &mut cmd_iterator,
+            Command::Write {
+                ack_exp: Ack::Ack,
+                ack_check_en: true,
+                length: 1_u8,
+            },
+        )?;
 
         self.enable_listen(I2C_LL_INTR_MASK);
 
@@ -233,11 +236,14 @@ impl LpI2c {
             }
 
             // Add a Write command with the specified length
-            self.add_cmd_lp(&mut cmd_iterator, Command::Write {
-                ack_exp: Ack::Ack,
-                ack_check_en: true,
-                length: fifo_size as u8,
-            })?;
+            self.add_cmd_lp(
+                &mut cmd_iterator,
+                Command::Write {
+                    ack_exp: Ack::Ack,
+                    ack_check_en: true,
+                    length: fifo_size as u8,
+                },
+            )?;
 
             // Check if this is the last chunk
             let cmd = if remaining_bytes == 0 {
@@ -280,11 +286,14 @@ impl LpI2c {
         // Load device address
         self.write_fifo((address << 1) | OperationType::Read as u8);
 
-        self.add_cmd_lp(&mut cmd_iterator, Command::Write {
-            ack_exp: Ack::Ack,
-            ack_check_en: true,
-            length: 1_u8,
-        })?;
+        self.add_cmd_lp(
+            &mut cmd_iterator,
+            Command::Write {
+                ack_exp: Ack::Ack,
+                ack_check_en: true,
+                length: 1_u8,
+            },
+        )?;
 
         self.enable_listen(
             (1 << LP_I2C_TRANS_COMPLETE_INT_ST_S) | (1 << LP_I2C_END_DETECT_INT_ST_S),
@@ -298,33 +307,45 @@ impl LpI2c {
 
             if fifo_size == 1 {
                 // Read one byte and send NACK
-                self.add_cmd_lp(&mut cmd_iterator, Command::Read {
-                    ack_value: Ack::Nack,
-                    length: 1, // which is `fifo_size`
-                })?;
+                self.add_cmd_lp(
+                    &mut cmd_iterator,
+                    Command::Read {
+                        ack_value: Ack::Nack,
+                        length: 1, // which is `fifo_size`
+                    },
+                )?;
                 // Send STOP command after reading
                 self.add_cmd_lp(&mut cmd_iterator, Command::Stop)?;
             } else if fifo_size > 1 && remaining_bytes == 0 {
                 // This means it is the last transaction
                 // Read all but the last byte and send ACKs
-                self.add_cmd_lp(&mut cmd_iterator, Command::Read {
-                    ack_value: Ack::Ack,
-                    length: (fifo_size - 1) as u8,
-                })?;
+                self.add_cmd_lp(
+                    &mut cmd_iterator,
+                    Command::Read {
+                        ack_value: Ack::Ack,
+                        length: (fifo_size - 1) as u8,
+                    },
+                )?;
                 // Read the last byte and send NACK
-                self.add_cmd_lp(&mut cmd_iterator, Command::Read {
-                    ack_value: Ack::Nack,
-                    length: 1,
-                })?;
+                self.add_cmd_lp(
+                    &mut cmd_iterator,
+                    Command::Read {
+                        ack_value: Ack::Nack,
+                        length: 1,
+                    },
+                )?;
                 // Send STOP command after reading
                 self.add_cmd_lp(&mut cmd_iterator, Command::Stop)?;
             } else {
                 // This means we have to read data more than we can fit into the Rx FIFO
                 // Read fifo_size bytes and send ACKs
-                self.add_cmd_lp(&mut cmd_iterator, Command::Read {
-                    ack_value: Ack::Ack,
-                    length: fifo_size as u8,
-                })?;
+                self.add_cmd_lp(
+                    &mut cmd_iterator,
+                    Command::Read {
+                        ack_value: Ack::Ack,
+                        length: fifo_size as u8,
+                    },
+                )?;
                 // Send END command signaling more data to come
                 self.add_cmd_lp(&mut cmd_iterator, Command::End)?;
                 cmd_iterator = CommandRegister::COMD0;
