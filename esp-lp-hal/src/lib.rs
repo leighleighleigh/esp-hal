@@ -66,15 +66,21 @@ pub fn wake_hp_core() {
 }
 
 /// Wake up the HP core
-#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[cfg(esp32s2)]
 #[unsafe(link_section = ".init.rust")]
 pub fn ulp_wake_hp_core() {
-    unsafe { &*pac::RTC_CNTL::PTR }
-        .rtc_state0()
-        .write(|w| w.rtc_sw_cpu_int().set_bit());
+    unsafe { &*esp32s2_ulp::LPWR::PTR }.rtc_state0().write(|w| w.rtc_sw_cpu_int().set_bit());
 }
 
-#[cfg(feature = "esp32c6")]
+/// Wake up the HP core
+#[cfg(esp32s3)]
+#[unsafe(link_section = ".init.rust")]
+pub fn ulp_wake_hp_core() {
+    unsafe { &*esp32s3_ulp::RTC_CNTL::PTR }.rtc_state0().write(|w| w.rtc_sw_cpu_int().set_bit());
+}
+
+
+#[cfg(esp32c6)]
 global_asm!(
     r#"
     .section    .init.vector, "ax"
@@ -250,18 +256,29 @@ global_asm!(
   "#
 );
 
+#[cfg(any(esp32s2, esp32s3))]
+#[unsafe(export_name = "rust_main")]
+#[unsafe(link_section = ".init")]
+unsafe extern "C" fn ulp_core_startup() -> ! {
+    unsafe {
+        unsafe extern "Rust" {
+            fn main();
+        }
+
+        main();
+        ulp_riscv_halt();
+    }
+}
+
+#[cfg(esp32c6)]
 #[unsafe(export_name = "rust_main")]
 #[unsafe(link_section = ".init")]
 unsafe extern "C" fn lp_core_startup() -> ! {
     unsafe {
         unsafe extern "Rust" {
-            #[cfg(any(esp32s2, esp32s3))]
-            fn main();
-            #[cfg(esp32c6)]
             fn main() -> !;
         }
 
-        #[cfg(esp32c6)]
         if (*pac::LP_CLKRST::PTR)
             .lp_clk_conf()
             .read()
@@ -272,14 +289,11 @@ unsafe extern "C" fn lp_core_startup() -> ! {
         }
 
         main();
-
-        #[cfg(any(esp32s2, esp32s3))]
-        ulp_riscv_halt();
     }
 }
 
 /// Enter a critical section (disable interrupts)
-#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[cfg(any(esp32s2, esp32s3))]
 #[unsafe(link_section = ".init.rust")]
 pub fn ulp_disable_interrupts() {
     // Enter a critical section by disabling all interrupts
@@ -299,7 +313,7 @@ pub fn ulp_disable_interrupts() {
 }
 
 /// Exit a critical section (re-enable interrupts)
-#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[cfg(any(esp32s2, esp32s3))]
 #[unsafe(link_section = ".init.rust")]
 pub fn ulp_enable_interrupts() {
     // Exit a critical section by enabling all interrupts
@@ -311,7 +325,7 @@ pub fn ulp_enable_interrupts() {
 }
 
 /// Wait for any (even unmasked) interrupt
-#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[cfg(any(esp32s2, esp32s3))]
 #[unsafe(link_section = ".init.rust")]
 pub fn ulp_waitirq() {
     // Wait for interrupt
@@ -321,18 +335,16 @@ pub fn ulp_waitirq() {
     }
 }
 
-#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[cfg(any(esp32s2, esp32s3))]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init")]
 unsafe extern "C" fn ulp_riscv_rescue_from_monitor() {
     // Rescue RISC-V core from monitor state.
-    unsafe { &*pac::RTC_CNTL::PTR }
-        .cocpu_ctrl()
-        .modify(|_, w| w.cocpu_done().clear_bit().cocpu_shut_reset_en().clear_bit());
+    unsafe { &*pac::RTC_CNTL::PTR }.cocpu_ctrl().modify(|_, w| w.cocpu_done().clear_bit().cocpu_shut_reset_en().clear_bit());
 }
 
 /// Stops the ULP core, called from itself.
-#[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
+#[cfg(any(esp32s2, esp32s3))]
 #[unsafe(link_section = ".init.rust")]
 fn ulp_riscv_halt() -> ! {
     unsafe {

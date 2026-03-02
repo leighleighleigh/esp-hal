@@ -41,7 +41,7 @@
 //! # }
 //! ```
 
-use crate::peripherals::LPWR;
+use crate::{peripherals::LPWR, time::{Rate,Duration}};
 
 /// Enum representing the possible wakeup sources for the ULP core.
 #[derive(Debug, Clone, Copy)]
@@ -53,12 +53,13 @@ pub enum UlpCoreWakeupSource {
 /// Structure representing the ULP (Ultra-Low Power) core.
 pub struct UlpCore<'d> {
     _lp_core: crate::peripherals::ULP_RISCV_CORE<'d>,
+    _wakeup_period: crate::time::Duration,
 }
 
 impl<'d> UlpCore<'d> {
     /// Creates a new instance of the `UlpCore` struct.
     pub fn new(lp_core: crate::peripherals::ULP_RISCV_CORE<'d>) -> Self {
-        let mut this = Self { _lp_core: lp_core };
+        let mut this = Self { _lp_core: lp_core, _wakeup_period: Rate::from_hz(50).as_duration() };
         this.stop();
 
         // clear all of RTC_SLOW_RAM - this makes sure .bss is cleared without relying
@@ -69,6 +70,13 @@ impl<'d> UlpCore<'d> {
         this
     }
 
+    /// Changes the timer rate used to wake-up the ULP core periodically
+    pub fn with_wakeup_period(self, period : Duration) -> Self {
+        let mut x = self;
+        x._wakeup_period = period;
+        x
+    }
+
     /// Stops the ULP core.
     pub fn stop(&mut self) {
         ulp_stop();
@@ -76,7 +84,20 @@ impl<'d> UlpCore<'d> {
 
     /// Runs the ULP core with the specified wakeup source.
     pub fn run(&mut self, wakeup_src: UlpCoreWakeupSource) {
+        ulp_set_wakeup_period(self._wakeup_period);
         ulp_run(wakeup_src);
+    }
+}
+
+fn ulp_set_wakeup_period(period : Duration) {
+    // Assumes the default ULP clocks of 17.5 MHz, from RTC_FAST_CLK.
+    let mut cycles : u32 = period.as_millis() as u32 * 17500 / 32_768;
+    // With 24-bits of register precision, we can theoretically
+    // set the timer to between 1 millisecond and ~8.7 hours (AFAIK!)
+    cycles = cycles.min(0xFFFFFF).max(1);
+    let slpcycles = (cycles & 0x00FFFFFF) << 8;
+    unsafe {
+        { &*crate::peripherals::RTC_CNTL::PTR }.ulp_cp_timer_1().write(|w| w.ulp_cp_timer_slp_cycle().bits(slpcycles));
     }
 }
 
