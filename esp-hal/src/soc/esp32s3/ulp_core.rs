@@ -96,9 +96,7 @@ fn ulp_set_wakeup_period(period : Duration) {
     // set the timer to between 1 millisecond and ~8.7 hours (AFAIK!)
     cycles = cycles.min(0xFFFFFF).max(1);
     let slpcycles = (cycles & 0x00FFFFFF) << 8;
-    unsafe {
-        { &*crate::peripherals::RTC_CNTL::PTR }.ulp_cp_timer_1().write(|w| w.ulp_cp_timer_slp_cycle().bits(slpcycles));
-    }
+    LPWR::regs().ulp_cp_timer_1().write(|w| unsafe {w.ulp_cp_timer_slp_cycle().bits(slpcycles)});
 }
 
 fn ulp_stop() {
