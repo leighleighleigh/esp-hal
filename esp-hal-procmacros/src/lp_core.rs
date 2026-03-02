@@ -139,6 +139,16 @@ pub fn entry(args: TokenStream, input: TokenStream) -> TokenStream {
                             let mut #param_name = unsafe { the_hal::gpio::conjure_output().unwrap() };
                         ));
                     }
+                    "OutputOpenDrain" => {
+                        let pin = extract_pin(&t.ty);
+                        if used_pins.contains(&pin) {
+                            return Error::new(arg.span(), "duplicate pin").to_compile_error();
+                        }
+                        used_pins.push(pin);
+                        create_peripheral.push(quote!(
+                            let mut #param_name = unsafe { the_hal::gpio::conjure_output_open_drain().unwrap() };
+                        ));
+                    }
                     "Input" => {
                         let pin = extract_pin(&t.ty);
                         if used_pins.contains(&pin) {
@@ -180,7 +190,7 @@ pub fn entry(args: TokenStream, input: TokenStream) -> TokenStream {
     quote!(
         #[allow(non_snake_case)]
         #[unsafe(export_name = "main")]
-        pub fn __risc_v_rt__main() -> ! {
+        pub fn __risc_v_rt__main() {
             #[unsafe(export_name = #magic_symbol_name)]
             static ULP_MAGIC: [u32; 0] = [0u32; 0];
 
