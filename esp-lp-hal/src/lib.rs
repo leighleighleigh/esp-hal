@@ -38,6 +38,10 @@ pub use esp32s2_ulp as pac;
 #[cfg(esp32s3)]
 pub use esp32s3_ulp as pac;
 
+/// Peripheral structs
+pub mod peripherals;
+pub use peripherals::Peripherals;
+
 /// The prelude
 pub mod prelude {
     pub use procmacros::entry;
