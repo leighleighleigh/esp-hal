@@ -176,24 +176,6 @@ ulp_reset_vector:
 	/* no more than 16 bytes here */
 	jal zero, _ulp_start
 
-/* Initialisation routine */
-.section .init, "ax"
-.global _ulp_start
-_ulp_start:
-    /* Setup the global pointer & thread pointer */
-    .option push
-    .option norelax
-    la gp, __global_pointer$
-    addi tp, gp, 0
-    .option pop
-    /* Setup the stack pointer & frame pointer */
-    la sp, _stack_start
-    add s0, sp, zero
-    /* Begin rust startup (provided by riscv-rt),
-     * which will then call hal_main, then main.
-     */
-    jal zero, _start_rust
-
 /* Hardware trap vector, placed at address 0x10
  * Handles all interrupts and exceptions for the ULP core.
  * Saves registers ra,t0-6,a0-7, then calls _start_trap_rust.
@@ -234,3 +216,21 @@ _ulp_start_trap:
 
     /* Exit interrupt handler by executing the custom retirq instruction which will restore pc and re-enable interrupts */
     retirq_insn
+
+/* Initialisation routine */
+.section .text, "ax"
+.global _ulp_start
+_ulp_start:
+    /* Setup the global pointer & thread pointer */
+    .option push
+    .option norelax
+    la gp, __global_pointer$
+    addi tp, gp, 0
+    .option pop
+    /* Setup the stack pointer & frame pointer */
+    la sp, _stack_start
+    add s0, sp, zero
+    /* Begin rust startup (provided by riscv-rt),
+     * which will then call hal_main, then main.
+     */
+    jal zero, _start_rust
