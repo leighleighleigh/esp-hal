@@ -182,6 +182,7 @@ ulp_reset_vector:
  */
 .section .trap, "ax"
 .global _ulp_start_trap
+.global _ulp_end_trap
 _ulp_start_trap:
     /* Save the general gurpose register context before handling the interrupt */
     save_general_regs
@@ -206,7 +207,7 @@ _ulp_start_trap:
      * The normal _start_trap_rust, provided by riscv-rt crate, is /DISCARD/-ed.
      */
     jal ra,_ulp_start_trap_rust
-
+_ulp_end_trap:
     /* Restore the return address and stack pointer from the q registers */
     getq_insn ra, q2
     getq_insn sp, q3

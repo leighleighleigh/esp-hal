@@ -1,4 +1,9 @@
-use riscv::{InterruptNumber, interrupt::Interrupt, result::*};
+use riscv::{
+    ExceptionNumber,
+    InterruptNumber,
+    interrupt::{Exception, Interrupt},
+    result::*,
+};
 use riscv_rt::{TrapFrame, setup_interrupts};
 
 #[doc(hidden)]
@@ -41,7 +46,7 @@ pub fn mie_impl(enable: bool) -> bool {
 // Must be in .trap section, NOT .trap.rust, because we will be discarding .trap.rust !
 #[unsafe(link_section = ".trap")]
 #[inline(always)]
-pub fn mcause_impl() -> riscv::interrupt::Trap<usize, usize> {
+pub fn mcause_impl() -> Option<riscv::interrupt::Trap<usize, usize>> {
     // Does not affect the internal exception bits,
     //  which are always enabled (unmasked, value here is 0).
     // IRQ Type   Bit   Description
@@ -60,20 +65,31 @@ pub fn mcause_impl() -> riscv::interrupt::Trap<usize, usize> {
         );
     }
 
-    let is_timer_interrupt: bool = (cause & 0b1) != 0;
-    let is_external_interrupt: bool = (cause & (0b1 << 31)) != 0;
-
-    if is_external_interrupt {
-        riscv::interrupt::Trap::Interrupt(Interrupt::MachineExternal.number())
-    } else {
-        if is_timer_interrupt {
-            riscv::interrupt::Trap::Interrupt(Interrupt::MachineTimer.number())
-        } else {
-            // Otherwise it's an exception
-            let code = (cause & 0b1111) as usize;
-            riscv::interrupt::Trap::Exception(code)
-        }
+    if cause & (1 << 31) != 0 {
+        return Some(riscv::interrupt::Trap::Interrupt(
+            Interrupt::MachineExternal.number(),
+        ));
     }
+
+    if cause & (1 << 0) != 0 {
+        return Some(riscv::interrupt::Trap::Interrupt(
+            Interrupt::MachineTimer.number(),
+        ));
+    }
+
+    if cause & (1 << 1) != 0 {
+        return Some(riscv::interrupt::Trap::Exception(
+            Exception::IllegalInstruction.number(),
+        ));
+    }
+
+    if cause & (1 << 2) != 0 {
+        return Some(riscv::interrupt::Trap::Exception(
+            Exception::LoadMisaligned.number(),
+        ));
+    }
+
+    None
 }
 
 #[setup_interrupts]
@@ -88,13 +104,14 @@ unsafe fn ulp_setup_interrupts() {
 pub unsafe extern "C" fn ulp_start_trap_rust(trap_frame: *const TrapFrame) {
     unsafe extern "C" {
         fn _dispatch_core_interrupt(code: usize);
-        fn _dispatch_exception(trap_frame: &TrapFrame, code: usize);
+        fn _dispatch_exception(trap_frame: *const TrapFrame, code: usize);
     }
-
     unsafe {
-        match mcause_impl() {
-            riscv::interrupt::Trap::Interrupt(code) => _dispatch_core_interrupt(code),
-            riscv::interrupt::Trap::Exception(code) => _dispatch_exception(&*trap_frame, code),
+        if let Some(mcause) = mcause_impl() {
+            match mcause {
+                riscv::interrupt::Trap::Interrupt(code) => _dispatch_core_interrupt(code),
+                riscv::interrupt::Trap::Exception(code) => _dispatch_exception(&*trap_frame, code),
+            }
         }
     }
 }
