@@ -1,5 +1,5 @@
 pub use riscv::interrupt::{Exception, Interrupt};
-pub use riscv_rt::{core_interrupt, exception, external_interrupt};
+pub use riscv_rt::{TrapFrame, core_interrupt, exception, external_interrupt};
 
 #[cfg(any(esp32s2, esp32s3))]
 mod critical_section;
