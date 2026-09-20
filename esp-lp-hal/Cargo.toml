@@ -46,7 +46,7 @@ embedded-io-07    = { package = "embedded-io", version = "0.7",  optional = true
 nb                = { version = "1.1.0",  optional = true }
 procmacros        = { version = "0.23.0", package = "esp-hal-procmacros", path = "../esp-hal-procmacros" }
 riscv             = { version = "0.16.1", features = ["critical-section-single-hart"] }
-riscv-rt = { version = "0.18.0", features = ["single-hart", "no-mhartid", "no-xtvec", "no-xie-xip"] }
+riscv-rt = { version = "0.18.0", features = ["single-hart", "no-mhartid", "no-xtvec", "no-xie-xip", "custom-setup-interrupts"] }
 esp-metadata-generated = { version = "0.5.1", path = "../esp-metadata-generated" }
 esp32c6-lp        = { version = "0.3.0", features = ["critical-section"], optional = true, git = "https://github.com/esp-rs/esp-pacs", rev = "fc3e6d4" }
 esp32s2-ulp       = { version = "0.3.0", features = ["critical-section"], optional = true, git = "https://github.com/esp-rs/esp-pacs", rev = "fc3e6d4" }
