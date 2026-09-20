@@ -27,13 +27,6 @@ PROVIDE(ExceptionHandler = abort);
    Users can override this alias by defining the symbol themselves */
 PROVIDE(DefaultHandler = abort);
 
-/* Default interrupt trap entry point. When vectored trap mode is enabled,
-   the riscv-rt crate provides an implementation of this function, which saves caller saved
-   registers, calls the the DefaultHandler ISR, restores caller saved registers and returns.
-   Note, however, that this provided implementation cannot be overwritten. We use PROVIDE
-   to avoid compilation errors in direct mode, not to allow users to overwrite the symbol. */
-PROVIDE(_start_DefaultHandler_trap = _start_trap);
-
 /* The following symbols may be overriden in user code */
 PROVIDE(MachineExternal = DefaultHandler);
 PROVIDE(MachineSoft = DefaultHandler);

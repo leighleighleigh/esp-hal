@@ -29,6 +29,12 @@ SECTIONS
 {
   . = ORIGIN(ram);
 
+
+  /DISCARD/ :
+  {
+    KEEP(*(.trap.rust)) /* Discard the original _start_trap_rust function */
+  }
+
   .text :
   {
     /* Power-on-reset must be placed at address 0x0 */

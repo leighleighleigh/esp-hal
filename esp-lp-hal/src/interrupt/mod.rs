@@ -1,5 +1,6 @@
 pub use riscv::interrupt::{Exception, Interrupt};
 use riscv::result::*;
+use riscv_rt::{TrapFrame, setup_interrupts};
 pub use riscv_rt::{core_interrupt, exception, external_interrupt};
 
 /// Just a dummy type to test the `ExternalInterrupt` trait.
@@ -30,9 +31,39 @@ unsafe impl riscv::InterruptNumber for ExternalInterrupt {
 }
 unsafe impl riscv::ExternalInterruptNumber for ExternalInterrupt {}
 
-#[unsafe(export_name = "DefaultHandler")]
-unsafe fn custom_interrupt_handler() {
-    loop {}
+// #[unsafe(export_name = "DefaultHandler")]
+// unsafe fn custom_interrupt_handler() {
+//     loop {}
+// }
+
+#[setup_interrupts]
+unsafe fn ulp_setup_interrupts() {
+    // Does nothing for ULP core.
+
+    // Default impl below.
+    // extern "C" {
+    //     fn _start_trap();
+    // }
+    // let xtvec_val = match () {
+    //     _ => Xtvec::new(_start_trap as *const () as usize, TrapMode::Direct),
+    // };
+    // xtvec::write(xtvec_val);
+}
+
+#[doc(hidden)]
+#[unsafe(link_section = ".trap")] // Must be in .trap section, NOT .trap.rust, because we will be discarding .trap.rust !
+#[unsafe(export_name = "_start_trap_rust")]
+pub unsafe extern "C" fn ulp_start_trap_rust(_trap_frame: *const TrapFrame) {
+    unsafe extern "C" {
+        fn _dispatch_core_interrupt(code: usize);
+        fn _dispatch_exception(trap_frame: &TrapFrame, code: usize);
+    }
+
+    // TODO: Implement interrupt/exception delegation assembly code
+    // match xcause::read().cause() {
+    //     xcause::Trap::Interrupt(code) => _dispatch_core_interrupt(code),
+    //     xcause::Trap::Exception(code) => _dispatch_exception(&*trap_frame, code),
+    // }
 }
 
 // /// Handler with the simplest signature.
