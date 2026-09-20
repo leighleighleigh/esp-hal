@@ -28,6 +28,8 @@ PROVIDE(ExceptionHandler = abort);
 PROVIDE(DefaultHandler = abort);
 
 /* The following symbols may be overriden in user code */
+PROVIDE(Breakpoint = abort);
+
 PROVIDE(MachineExternal = DefaultHandler);
 PROVIDE(MachineSoft = DefaultHandler);
 PROVIDE(MachineTimer = DefaultHandler);
@@ -35,7 +37,6 @@ PROVIDE(SupervisorExternal = DefaultHandler);
 PROVIDE(SupervisorSoft = DefaultHandler);
 PROVIDE(SupervisorTimer = DefaultHandler);
 
-PROVIDE(Breakpoint = ExceptionHandler);
 PROVIDE(IllegalInstruction = ExceptionHandler);
 PROVIDE(InstructionFault = ExceptionHandler);
 PROVIDE(InstructionMisaligned = ExceptionHandler);
