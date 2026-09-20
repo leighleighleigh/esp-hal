@@ -32,6 +32,7 @@ SECTIONS
 
   /DISCARD/ :
   {
+    KEEP(*(.init))      /* Discard the riscv-rt provided _start function */
     KEEP(*(.trap.rust)) /* Discard the original _start_trap_rust function */
   }
 
@@ -42,9 +43,9 @@ SECTIONS
     /* ULP will jump to 0x10 when an interrupt trap occurs */
     . = 0x10;
     KEEP(*(.trap));
-    KEEP(*(.init));
+    /* KEEP(*(.init)); */
     KEEP(*(.init.rust));
-    KEEP(*(.trap.rust));
+    /* KEEP(*(.trap.rust)); */
     *(.text .text.*)
   } >ram
 
