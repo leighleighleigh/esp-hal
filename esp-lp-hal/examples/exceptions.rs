@@ -28,17 +28,17 @@ fn main() {
     }
 }
 
-// /// Handler with the simplest signature.
-// #[external_interrupt(ExternalInterrupt::SAR)]
-// fn external_gpio() {
-//     // Increment the counter every time RISCV_START_INT is triggered
-//     unsafe {
-//         let counter = ADDRESS as *mut u32;
-//         counter.write_volatile(counter.read_volatile() + 1);
-//     }
-//     // do something here
-//     // loop {}
-// }
+/// Handler with the simplest signature.
+#[external_interrupt(ExternalInterrupt::GPIO)]
+fn external_gpio() {
+    // Increment the counter every time RISCV_START_INT is triggered
+    unsafe {
+        let counter = ADDRESS as *mut u32;
+        counter.write_volatile(counter.read_volatile() + 1);
+    }
+    // do something here
+    // loop {}
+}
 
 /// Handler with the most complete signature.
 #[exception(Exception::IllegalInstruction)]
