@@ -40,14 +40,14 @@ fn main() {
 //     // loop {}
 // }
 
-// /// Handler with the most complete signature.
-// #[exception(Exception::IllegalInstruction)]
-// unsafe fn illegal_instruction(_trap: &riscv_rt::TrapFrame) -> ! {
-//     // Increment the counter every time RISCV_START_INT is triggered
-//     unsafe {
-//         let counter = ADDRESS as *mut u32;
-//         counter.write_volatile(counter.read_volatile() + 1);
-//     }
-//     // do something here
-//     loop {}
-// }
+/// Handler with the most complete signature.
+#[exception(Exception::IllegalInstruction)]
+unsafe fn illegal_instruction(_trap: &riscv_rt::TrapFrame) -> ! {
+    // Increment the counter every time RISCV_START_INT is triggered
+    unsafe {
+        let counter = ADDRESS as *mut u32;
+        counter.write_volatile(counter.read_volatile() + 1);
+    }
+    // do something here
+    loop {}
+}

@@ -221,9 +221,9 @@ _ulp_start_trap:
     /* Call the global interrupt handler. The interrupt status is passed as the argument in a0.
      * We do not re-enable interrupts before calling the handler as ULP RISC-V does not
      * support nested interrupts.
-     * _start_trap_rust is provided by riscv-rt crate.
+     * The normal _start_trap_rust, provided by riscv-rt crate, is /DISCARD/-ed.
      */
-    jal ra,_start_trap_rust
+    jal ra,_ulp_start_trap_rust
 
     /* Restore the return address and stack pointer from the q registers */
     getq_insn ra, q2
