@@ -1,4 +1,4 @@
-use riscv::result::*;
+use riscv::{InterruptNumber, interrupt::Interrupt, result::*};
 use riscv_rt::{TrapFrame, setup_interrupts};
 
 #[doc(hidden)]
@@ -42,12 +42,13 @@ pub fn mie_impl(enable: bool) -> bool {
 #[unsafe(link_section = ".trap")]
 #[inline(always)]
 pub fn mcause_impl() -> riscv::interrupt::Trap<usize, usize> {
-    // Exception ID, Description
-    // 2, Illegal instructions
-    // 3, Breakpoints (EBREAK)
-    // 6, Misaligned atomic instructions
-    //
-    // Bit 31 is used to indicate an interrupt.
+    // Does not affect the internal exception bits,
+    //  which are always enabled (unmasked, value here is 0).
+    // IRQ Type   Bit   Description
+    // Internal     0   Internal timer interrupt
+    // Internal     1   EBREAK/ECALL or Illegal Instruction
+    // Internal     2   BUS Error (Unaligned Memory Access)
+    // External    31   RTC peripheral interrupts
 
     // mcause register does not exist on ULP cores,
     // so the Trap must be formed using q-registers
@@ -59,20 +60,24 @@ pub fn mcause_impl() -> riscv::interrupt::Trap<usize, usize> {
         );
     }
 
-    let interrupt: bool = (cause & (0b1 << 31)) != 0;
+    let is_timer_interrupt: bool = (cause & 0b1) != 0;
+    let is_external_interrupt: bool = (cause & (0b1 << 31)) != 0;
 
-    if interrupt {
-        let code = (cause & 0b111) as usize;
-        riscv::interrupt::Trap::Interrupt(code)
+    if is_external_interrupt {
+        riscv::interrupt::Trap::Interrupt(Interrupt::MachineExternal.number())
     } else {
-        let code = (cause & 0b1111) as usize;
-        riscv::interrupt::Trap::Exception(code)
+        if is_timer_interrupt {
+            riscv::interrupt::Trap::Interrupt(Interrupt::MachineTimer.number())
+        } else {
+            // Otherwise it's an exception
+            let code = (cause & 0b1111) as usize;
+            riscv::interrupt::Trap::Exception(code)
+        }
     }
 }
 
 #[setup_interrupts]
 unsafe fn ulp_setup_interrupts() {
-    // TODO: Enable interrupts
     mie_impl(true);
 }
 
