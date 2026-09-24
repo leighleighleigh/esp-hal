@@ -169,7 +169,7 @@
     addi sp,sp, \cxt_size
 .endm
 
-.section .reset, "ax"
+.section .ulp_reset, "ax"
 .global ulp_reset_vector 
 /* Power-on reset vector, placed at address 0x0 */
 ulp_reset_vector:
@@ -180,9 +180,8 @@ ulp_reset_vector:
  * Handles all interrupts and exceptions for the ULP core.
  * Saves registers ra,t0-6,a0-7, then calls _start_trap_rust.
  */
-.section .trap, "ax"
+.section .ulp_trap, "ax"
 .global _ulp_start_trap
-.global _ulp_end_trap
 _ulp_start_trap:
     /* Save the general gurpose register context before handling the interrupt */
     save_general_regs
@@ -206,8 +205,8 @@ _ulp_start_trap:
      * support nested interrupts.
      * The normal _start_trap_rust, provided by riscv-rt crate, is /DISCARD/-ed.
      */
-    jal ra,_ulp_start_trap_rust
-_ulp_end_trap:
+    jal ra, _ulp_start_trap_rust
+
     /* Restore the return address and stack pointer from the q registers */
     getq_insn ra, q2
     getq_insn sp, q3
@@ -219,7 +218,7 @@ _ulp_end_trap:
     retirq_insn
 
 /* Initialisation routine */
-.section .text, "ax"
+.section .ulp_init.start, "ax"
 .global _ulp_start
 _ulp_start:
     /* Setup the global pointer & thread pointer */
@@ -231,7 +230,5 @@ _ulp_start:
     /* Setup the stack pointer & frame pointer */
     la sp, _stack_start
     add s0, sp, zero
-    /* Begin rust startup (provided by riscv-rt),
-     * which will then call hal_main, then main.
-     */
-    jal zero, _start_rust
+    /* Jump to rust startup code */
+    jal zero, _ulp_start_rust

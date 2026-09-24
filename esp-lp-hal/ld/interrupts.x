@@ -19,6 +19,10 @@ PROVIDE(_start_trap = _ulp_start_trap);
 EXTERN(_ulp_start_rust);
 PROVIDE(hal_main = _ulp_start_rust);
 
+/* Trap start debug function */
+EXTERN(default_debug_start_trap);
+PROVIDE(debug_start_trap = default_debug_start_trap);
+
 /* Default exception handler. By default, the exception handler is abort.
    Users can override this alias by defining the symbol themselves */
 PROVIDE(ExceptionHandler = abort);

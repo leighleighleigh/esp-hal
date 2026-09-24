@@ -113,18 +113,20 @@ pub fn ulp_timer_period(cycles: u32) {
 }
 
 /// Entry point to the ULP program
-#[unsafe(link_section = ".init.rust")]
+#[unsafe(link_section = ".ulp_init.rust")]
 #[unsafe(export_name = "_ulp_start_rust")]
 pub unsafe extern "C" fn lp_core_startup() -> ! {
     unsafe {
         unsafe extern "Rust" {
             // This symbol will be provided by the user via `#[entry]`
             fn main();
-
             // This variable is provided by the PAC, and used to
             // detect multiple calls to Peripherals::take().
             static mut DEVICE_PERIPHERALS: bool;
         }
+
+        #[cfg(any(esp32s2, esp32s3))]
+        interrupt::ulp_setup_interrupts();
 
         #[cfg(any(esp32s2, esp32s3))]
         ulp_riscv_rescue_from_monitor();
@@ -144,14 +146,13 @@ pub unsafe extern "C" fn lp_core_startup() -> ! {
         {
             CPU_CLOCK = XTAL_D2_CLK_HZ;
         }
-
         main();
         ulp_riscv_halt();
     }
 }
 
 #[cfg(any(esp32s2, esp32s3))]
-#[unsafe(link_section = ".init.rust")]
+#[unsafe(link_section = ".ulp_init.rust")]
 #[unsafe(no_mangle)]
 unsafe extern "C" fn ulp_riscv_rescue_from_monitor() {
     // Rescue RISC-V core from monitor state.
@@ -161,7 +162,7 @@ unsafe extern "C" fn ulp_riscv_rescue_from_monitor() {
 }
 
 /// Stops the ULP core, called from itself.
-#[unsafe(link_section = ".init.rust")]
+#[unsafe(link_section = ".ulp_init.rust")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ulp_riscv_halt() -> ! {
     #[cfg(any(esp32s2, esp32s3))]
