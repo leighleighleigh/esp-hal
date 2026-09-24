@@ -30,23 +30,35 @@ SECTIONS
   . = ORIGIN(ram);
 
 
-  /DISCARD/ :
-  {
-    KEEP(*(.init))      /* Discard the riscv-rt provided _start function */
-    KEEP(*(.trap.rust)) /* Discard the original _start_trap_rust function */
-  }
+/DISCARD/ :
+{
+  *(.init)           /* Discard the riscv-rt provided _start function */
+  *(.init.rust)      /* Discard the riscv-rt provided _start_rust function */
+  *(.trap.rust);     /* Discard riscv-rt provided '_start_trap_rust' Rust function */
+  *(.trap.vector);   /* Discard riscv-rt provided _trap_vector (vectored mode only) */
+  *(.trap.start);    /* for _start_trap routine */
+  *(.trap.start.*);  /* for _start_INTERRUPT_trap routines (vectored mode only) */
+  *(.trap.continue); /* for _continue_trap routine (vectored mode only) */
+  *(.trap .trap.*);  /* Other .trap symbols at the end */
+}
 
   .text :
   {
     /* Power-on-reset must be placed at address 0x0 */
-    KEEP(*(.reset));
-    /* ULP will jump to 0x10 when an interrupt trap occurs */
+    KEEP(*(.ulp_reset));
+
+    /* ULP will jump to 0x10 when an interrupt trap occurs.
+     * This is where we must place the trap vector ASM.
+     */
     . = 0x10;
-    KEEP(*(.trap));
-    /* KEEP(*(.init)); */
-    KEEP(*(.init.rust));
-    /* KEEP(*(.trap.rust)); */
-    *(.text .text.*)
+    KEEP(*(.ulp_trap));       /* ULP traps will jump to 0x10 */
+    KEEP(*(.ulp_init.start)); /* ulp_reset will jump to _ulp_start on reset/boot */
+    KEEP(*(.ulp_trap.rust));  /* Rust trap handlers */
+    KEEP(*(.ulp_init));       
+    KEEP(*(.ulp_init.rust));
+    *(.text.abort);
+    *(.text .text.*);
+    . = ALIGN(4);
   } >ram
 
   .rodata ALIGN(4):
@@ -55,9 +67,14 @@ SECTIONS
     *(.rodata*)
   } >ram
 
+  /* .data will not be initialised on _start,
+   * so that we can use it as non-volatile memory.
+   * This only works if ADDR(.data) == LOADADDR(.data),
+   * which is true for the ULP core.
+   */
   .data ALIGN(4):
   {
-    __sdata = .;
+    __sdata = .; 
     PROVIDE(__global_pointer$ = . + 0x800);
     *(.data)
     *(.data*)
@@ -69,7 +86,8 @@ SECTIONS
   /* Address of .data in ROM memory */
   __sidata = LOADADDR(.data);
 
-  .bss ALIGN(4):
+  /* .bss will be zero-ed every boot */
+  .bss ALIGN(4) :
   {
     __sbss = .;
     *(.bss)
