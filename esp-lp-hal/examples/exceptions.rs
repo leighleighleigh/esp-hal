@@ -1,6 +1,5 @@
-//! ULP interrupt-based counter example.
-//! Increments a 32 bit counter value at a known point in memory, whenever the ULP program is run.
-//! If GPIO0 is pressed, resets the counter.
+//! ULP exception trap example.
+//! When an IllegalInstruction occurs, will write '0xdeaddead' to *ADDRESS.
 
 //% CHIPS: esp32s3 esp32s2
 
@@ -9,11 +8,8 @@
 
 extern crate panic_halt;
 
-use esp_lp_hal::{
-    interrupt::{Exception, ExternalInterrupt, exception, external_interrupt},
-    pac::Peripherals,
-    prelude::*,
-};
+use esp_lp_hal::{delay::Delay, interrupt::Exception, pac::Peripherals, prelude::*};
+use riscv_rt::exception;
 
 const ADDRESS: usize = 0x1000;
 
@@ -21,33 +17,23 @@ const ADDRESS: usize = 0x1000;
 fn main() {
     let _peripherals = Peripherals::take().unwrap();
 
-    loop {
-        unsafe {
-            core::arch::asm!("nop");
-        }
-    }
-}
+    // Delay for a second
+    let dly = Delay {};
+    dly.delay_millis(1000);
 
-/// Handler with the simplest signature.
-#[external_interrupt(ExternalInterrupt::GPIO)]
-fn external_gpio() {
-    // Increment the counter every time RISCV_START_INT is triggered
+    // Crash
     unsafe {
-        let counter = ADDRESS as *mut u32;
-        counter.write_volatile(counter.read_volatile() + 1);
+        core::arch::asm!("csrrs a1, mcause, zero");
     }
-    // do something here
-    // loop {}
+
+    loop {}
 }
 
-/// Handler with the most complete signature.
 #[exception(Exception::IllegalInstruction)]
 unsafe fn illegal_instruction(_trap: &riscv_rt::TrapFrame) -> ! {
-    // Increment the counter every time RISCV_START_INT is triggered
     unsafe {
-        let counter = ADDRESS as *mut u32;
-        counter.write_volatile(counter.read_volatile() + 1);
+        let reg = ADDRESS as *mut u32;
+        reg.write_volatile(0xdeaddead);
     }
-    // do something here
     loop {}
 }
