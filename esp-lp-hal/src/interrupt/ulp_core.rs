@@ -97,36 +97,20 @@ pub fn irq_to_mcause(cause: u32) -> Option<riscv::interrupt::Trap<usize, usize>>
 }
 
 #[doc(hidden)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn default_debug_start_trap(_trap_frame: *const TrapFrame, _irqs: u32) {
-    // User code may override this function like so:
-    // #[unsafe(export_name = "debug_start_trap")]
-    // fn my_debug_start_trap(trap_frame : *const TrapFrame, irqs : u32) {
-    // ...
-    // }
-}
-
-#[doc(hidden)]
 #[unsafe(link_section = ".ulp_trap.rust")]
 #[unsafe(export_name = "_ulp_start_trap_rust")]
 pub unsafe extern "C" fn ulp_start_trap_rust(trap_frame: *const TrapFrame, irqs: u32) {
     unsafe extern "C" {
-        // These functions are created by the riscv-macros crate:
+        // These functions are provided by the riscv-macros crate:
         // https://github.com/rust-embedded/riscv/blob/b3a70b7945f229e828d87dbd7e003cec291db23a/riscv-macros/src/riscv.rs#L242
         fn _dispatch_core_interrupt(code: usize);
         fn _dispatch_exception(trap_frame: *const TrapFrame, code: usize);
-
-        // This debug function hook is called on the start of the trap,
-        // user code may re-define it for debugging purposes.
-        fn debug_start_trap(trap_frame: *const TrapFrame, irqs: u32);
     }
 
     unsafe {
-        // Call debug function with the trap_frame and IRQ status.
-        debug_start_trap(&*trap_frame, irqs);
-        // Convert the irq bitmask to a riscv Trap type, and dispatch it to the handlers
-        // registered in the `__EXCEPTIONS` or `__CORE_INTERRUPTS` arrays.
-        // The `_dispatch_...` functions, and the ISR arrays, are provided/managed by `riscv-rt`.
+        // Convert the irq bitmask to a riscv Trap type, and then call the _dispatch functions,
+        // which will then delegate to the `__EXCEPTIONS`, `__CORE_INTERRUPTS`, or
+        // '__EXTERNAL_INTERRUPTS' arrays.
         if let Some(mcause) = irq_to_mcause(irqs) {
             // Handle the trap
             match mcause {
