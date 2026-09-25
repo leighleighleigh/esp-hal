@@ -8,16 +8,11 @@ PROVIDE(abort = _default_abort);
 EXTERN(_ulp_start_trap);
 PROVIDE(_start_trap = _ulp_start_trap);
 
-/* Trap start debug function */
-EXTERN(default_debug_start_trap);
-PROVIDE(debug_start_trap = default_debug_start_trap);
-
 /* Default main routine. If no hal_main symbol is provided, then hal_main maps to main, which
    is usually defined by final users via the #[riscv_rt::entry] attribute. Using hal_main
    instead of main directly allow HALs to inject code before jumping to user main. */
 EXTERN(_ulp_start_rust);
 PROVIDE(hal_main = _ulp_start_rust);
-
 
 /* Ensure the interrupt vector tables, and dispatch functions, are always included in the binary */
 EXTERN(__CORE_INTERRUPTS);
