@@ -44,8 +44,8 @@
 use crate::{
     peripherals::LPWR,
     rtc_cntl::{
-        WakeupSource,
         sleep::{SleepResource, WrappedSleepConfig},
+        WakeupSource,
     },
 };
 
@@ -96,15 +96,22 @@ pub struct UlpCore<'d> {
 impl<'d> UlpCore<'d> {
     /// Creates a new instance of the `UlpCore` struct.
     pub fn new(lp_core: crate::peripherals::ULP_RISCV_CORE<'d>) -> Self {
-        let mut this = Self { _lp_core: lp_core };
-        this.stop();
+        Self { _lp_core: lp_core }
+    }
 
-        // clear all of RTC_SLOW_RAM - this makes sure .bss is cleared without relying
-        let lp_ram =
-            unsafe { core::slice::from_raw_parts_mut(0x5000_0000 as *mut u32, 8 * 1024 / 4) };
-        lp_ram.fill(0u32);
+    /// Reset the ULP core state.
+    /// Call run() to resume ULP operations.
+    pub fn reset(&mut self) {
+        ulp_hard_reset();
+        self.stop(); // Prevents the ULP timer from running
+        ulp_soft_reset();
+    }
 
-        this
+    /// Erase the ULP core firmware.
+    /// ULP will be reset before erasing.
+    pub fn erase(&mut self) {
+        self.reset();
+        ulp_erase();
     }
 
     /// Stops the ULP core.
@@ -199,6 +206,51 @@ fn ulp_stop() {
     rtc_cntl
         .cocpu_ctrl()
         .modify(|_, w| w.cocpu_clkgate_en().clear_bit());
+}
+
+fn ulp_hard_reset() {
+    // UNDOCUMENTED ULP HARD-RESET PROCEDURE
+    // Will recue the ULP core no matter how stuck it is.
+    let sar_ctrl = crate::peripherals::SENS::regs();
+
+    // Hard reset the coprocessor
+    sar_ctrl
+        .sar_peri_reset_conf()
+        .write(|w| w.sar_cocpu_reset().set_bit());
+
+    sar_ctrl
+        .sar_peri_reset_conf()
+        .write(|w| w.sar_cocpu_reset().clear_bit());
+
+    crate::rom::ets_delay_us(20);
+}
+
+fn ulp_soft_reset() {
+    // Regular reset procedure
+    let rtc_cntl = LPWR::regs();
+    rtc_cntl.cocpu_ctrl().write(|w| {
+        w.cocpu_shut().clear_bit();
+        w.cocpu_done().clear_bit();
+        w.cocpu_shut_reset_en().clear_bit()
+    });
+
+    crate::rom::ets_delay_us(20);
+
+    rtc_cntl.cocpu_ctrl().write(|w| {
+        w.cocpu_shut().set_bit();
+        w.cocpu_done().set_bit();
+        w.cocpu_shut_reset_en().set_bit()
+    });
+
+    crate::rom::ets_delay_us(20);
+}
+
+/// Erase the ULP core memory.
+/// The core should be stopped before doing this!
+fn ulp_erase() {
+    // clear all of RTC_SLOW_RAM - this makes sure .bss is cleared
+    let lp_ram = unsafe { core::slice::from_raw_parts_mut(0x5000_0000 as *mut u32, 8 * 1024 / 4) };
+    lp_ram.fill(0u32);
 }
 
 fn ulp_run(wakeup_src: UlpCoreWakeupSource) {
