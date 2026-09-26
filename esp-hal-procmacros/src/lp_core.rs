@@ -4,19 +4,19 @@ use quote::{format_ident, quote};
 
 #[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
 pub fn entry(args: TokenStream, input: TokenStream) -> TokenStream {
-    use proc_macro_crate::FoundCrate;
+    use proc_macro2::{Ident, Span};
     #[cfg(not(test))]
     use proc_macro_crate::crate_name;
-    use proc_macro2::{Ident, Span};
+    use proc_macro_crate::FoundCrate;
     use syn::{
+        parse::Error,
+        spanned::Spanned,
         FnArg,
         GenericArgument,
         ItemFn,
         PatType,
         PathArguments,
         Type,
-        parse::Error,
-        spanned::Spanned,
     };
 
     pub(crate) fn make_magic_symbol_name(args: &Vec<&PatType>) -> String {
@@ -211,9 +211,9 @@ pub fn entry(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn load_lp_code(input: TokenStream, fs: impl Filesystem) -> TokenStream {
     use object::{File, Object, ObjectSection, ObjectSymbol, Section, SectionFlags};
     use parse::Error;
-    use proc_macro_crate::{FoundCrate, crate_name};
     use proc_macro2::Span;
-    use syn::{Ident, LitStr, parse};
+    use proc_macro_crate::{crate_name, FoundCrate};
+    use syn::{parse, Ident, LitStr};
 
     let hal_crate = if cfg!(any(feature = "is-lp-core", feature = "is-ulp-core")) {
         crate_name("esp-lp-hal")
@@ -356,10 +356,6 @@ pub fn load_lp_code(input: TokenStream, fs: impl Filesystem) -> TokenStream {
                 static #rtc_code_start: u32;
             }
 
-            unsafe {
-                core::ptr::copy_nonoverlapping(LP_CODE as *const _ as *const u8, &#rtc_code_start as *const u32 as *mut u8, LP_CODE.len());
-            }
-
             impl LpCoreCode {
                 pub fn run(
                     &self,
@@ -367,6 +363,10 @@ pub fn load_lp_code(input: TokenStream, fs: impl Filesystem) -> TokenStream {
                     wakeup_source: LpCoreWakeupSource,
                     #(#arg_names: #args),*
                 ) {
+                    lp_core.reset_and_erase();
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(LP_CODE as *const _ as *const u8, &#rtc_code_start as *const u32 as *mut u8, LP_CODE.len());
+                    }
                     #(core::mem::forget(#arg_names);)*
                     lp_core.run(wakeup_source);
                 }
