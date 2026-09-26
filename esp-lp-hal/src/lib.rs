@@ -76,6 +76,33 @@ pub fn wake_hp_core() {
         .write(|w| w.rtc_sw_cpu_int().set_bit());
 }
 
+/// Stop the ULP Timer
+pub fn ulp_riscv_timer_stop() {
+    let rtc_cntl = unsafe { &*crate::pac::RTC_CNTL::PTR };
+    rtc_cntl
+        .rtc_ulp_cp_timer()
+        .write(|w| w.ulp_cp_slp_timer_en().clear_bit());
+}
+
+/// Resume the ULP Timer
+pub fn ulp_riscv_timer_resume() {
+    let rtc_cntl = unsafe { &*crate::pac::RTC_CNTL::PTR };
+    rtc_cntl
+        .rtc_ulp_cp_timer()
+        .write(|w| w.ulp_cp_slp_timer_en().set_bit());
+}
+
+/// Change the ULP Timer period
+pub fn ulp_timer_period(cycles: u32) {
+    let rtc_cntl = unsafe { &*crate::pac::RTC_CNTL::PTR };
+    rtc_cntl
+        .rtc_ulp_cp_timer_1()
+        .write(|w| unsafe { w.ulp_cp_timer_slp_cycle().bits(cycles << 8) });
+    rtc_cntl
+        .rtc_ulp_cp_ctrl()
+        .modify(|_, w| w.ulp_cp_force_start_top().clear_bit());
+}
+
 #[cfg(esp32c6)]
 global_asm!(
     r#"
@@ -149,8 +176,19 @@ loop:
 unsafe extern "C" fn lp_core_startup() -> ! {
     unsafe {
         unsafe extern "Rust" {
+            // This symbol will be provided by the user via `#[entry]`
             fn main();
+
+            // This variable is provided by the PAC, and used to
+            // detect multiple calls to Peripherals::take().
+            static mut DEVICE_PERIPHERALS: bool;
         }
+
+        // The pac::DEVICE_PERIPHERALS variable is re-zero-ed on start,
+        // to prevent it from persisting between calls to main().
+        // This prevents ULP-Timer-triggered-main()-calls from panicking
+        // on their second loop.
+        DEVICE_PERIPHERALS = false;
 
         #[cfg(esp32c6)]
         if (*pac::LP_CLKRST::PTR)
@@ -191,10 +229,9 @@ fn ulp_riscv_halt() -> ! {
             });
     }
 
-    // All chips will enter a no-op loop, when halting.
-    loop {
-        unsafe {
-            core::arch::asm!("addi x0, x0, 0"); // no-op
-        }
-    }
+    // All chips will enter an infinite, when halting.
+    // It's important that no 'nop' or 'wfi' is performed inside this loop,
+    // so that the chip silicon can properly detect a ULP halt.
+    #[allow(clippy::empty_loop)]
+    loop {}
 }
