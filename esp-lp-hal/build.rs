@@ -15,12 +15,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         Chip::Esp32s2 | Chip::Esp32s3 => "ld/link-ulp.x",
         _ => unreachable!(),
     };
-
     // Put the linker script somewhere the linker can find it:
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    println!("cargo:rustc-link-search={}", out.display());
     fs::copy(source_file, out.join("link.x"))?;
+    fs::copy("ld/interrupts.x", out.join("interrupts.x"))?;
+
+    // Tell rust where to search for linker scripts
+    println!("cargo:rustc-link-search={}", out.display());
+
+    println!("cargo:rerun-if-changed=ld/link-lp.x");
     println!("cargo:rerun-if-changed=ld/link-ulp.x");
+    println!("cargo:rerun-if-changed=ld/interrupts.x");
 
     // Done!
     Ok(())
