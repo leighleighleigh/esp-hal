@@ -20,10 +20,10 @@ pub fn ulp_setup_interrupts() {
     mie_impl(true);
 }
 
-#[doc(hidden)]
-#[inline(always)]
+/// Calls maskirq instruction to disable interrupts. Returns the previous setting.
+#[inline(never)] // Never inline this, else the global ASM containing the custom isntructions won't be found.
 #[unsafe(link_section = ".ulp_trap.rust")]
-pub fn mie_impl(enable: bool) -> bool {
+pub fn ulp_maskirq(disable_mask: u32) -> u32 {
     // Does not affect the internal exception bits,
     //  which are always enabled (unmasked, value here is 0).
     // IRQ Type   Bit   Description
@@ -33,73 +33,53 @@ pub fn mie_impl(enable: bool) -> bool {
     // External    31   RTC peripheral interrupts
     let old_mask: u32;
 
-    // let disable_exceptions: u32 = 0b111;
-    let disable_bit: u32 = 1 << 31;
-
-    // Create the new IRQ disable mask.
-    // We will only change bit 31 in response to the enable boolean.
-    // i.e. exceptions will always be enabled.
-    let new_mask: u32 = if enable { 0b0 } else { disable_bit };
-
     unsafe {
         core::arch::asm!(
             "maskirq_insn {}, {}",
             out(reg) old_mask,
-            in(reg) new_mask
+            in(reg) disable_mask
         );
     }
 
-    // Return previous enabled value,
-    // where enable == 0 (unmasked)
-    (old_mask & disable_bit) == 0
+    old_mask
 }
 
-/// Converts an IRQ bitmask value into a riscv-rt-compatible
-/// interrrupt::Trap type (Interrupt or Exception).
-#[inline(always)]
+#[doc(hidden)]
 #[unsafe(link_section = ".ulp_trap.rust")]
-pub fn irq_to_mcause(cause: u32) -> Option<riscv::interrupt::Trap<usize, usize>> {
-    // IRQ Type   Bit   Description                             Result
-    // Internal     0   Internal timer interrupt                Interrupt::MachineTimer
-    // Internal     1   EBREAK/ECALL or Illegal Instruction     Exception::IllegalInstruction
-    // Internal     2   BUS Error (Unaligned Memory Access)     Exception::LoadMisaligned
-    // External    31   RTC peripheral interrupts               Interrupt::MachineExternal
+pub fn mie_impl(enable: bool) -> bool {
+    let default_mask: u32 = 0b0;
+    let ext_int_bitpos: u32 = 1 << 31;
 
-    // The mcause register does not exist on the riscv ULP cores,
-    // so the Trap IRQ mask is read from custom register Q1.
-    // This is done in the _ulp_start_trap assembly function.
+    // Create the new IRQ disable mask.
+    // We will only change bit 31 in response to the enable boolean.
+    // i.e. exceptions will always be enabled.
+    let new_mask: u32 = if enable {
+        default_mask
+    } else {
+        default_mask | ext_int_bitpos
+    };
 
-    if cause & (1 << 31) != 0 {
-        return Some(riscv::interrupt::Trap::Interrupt(
-            CoreInterrupt::MachineExternal.number(),
-        ));
-    }
+    let old_mask = ulp_maskirq(new_mask);
 
-    if cause & (1 << 0) != 0 {
-        return Some(riscv::interrupt::Trap::Interrupt(
-            CoreInterrupt::MachineTimer.number(),
-        ));
-    }
-
-    if cause & (1 << 1) != 0 {
-        return Some(riscv::interrupt::Trap::Exception(
-            Exception::IllegalInstruction.number(),
-        ));
-    }
-
-    if cause & (1 << 2) != 0 {
-        return Some(riscv::interrupt::Trap::Exception(
-            Exception::LoadMisaligned.number(),
-        ));
-    }
-
-    None
+    // Return previous enabled value,
+    // where enable == 0 (unmasked)
+    (old_mask & ext_int_bitpos) == 0
 }
 
 #[doc(hidden)]
 #[unsafe(link_section = ".ulp_trap.rust")]
 #[unsafe(export_name = "_ulp_start_trap_rust")]
 pub unsafe extern "C" fn ulp_start_trap_rust(trap_frame: *const TrapFrame, irqs: u32) {
+    // The mcause register does not exist on the riscv ULP cores,
+    // so the Trap IRQ mask is read from custom register Q1.
+    // This is done in the _ulp_start_trap assembly function, and passed in $irq argument.
+    // Multiple irq bits may be set, so this function will need to check them all.
+
+    unsafe extern "Rust" {
+        pub static mut ULP_DEBUG_GLOBAL_TRAP_COUNT: u32;
+        pub static mut ULP_DEBUG_GLOBAL_TRAP_CAUSE: u32;
+    }
+
     unsafe extern "C" {
         // These functions are provided by the riscv-macros crate:
         // https://github.com/rust-embedded/riscv/blob/b3a70b7945f229e828d87dbd7e003cec291db23a/riscv-macros/src/riscv.rs#L242
@@ -107,17 +87,41 @@ pub unsafe extern "C" fn ulp_start_trap_rust(trap_frame: *const TrapFrame, irqs:
         fn _dispatch_exception(trap_frame: *const TrapFrame, code: usize);
     }
 
+    // IRQ Type   Bit   Description                             Result
+    // Internal     0   Internal timer interrupt                Interrupt::MachineTimer
+    // Internal     1   EBREAK/ECALL or Illegal Instruction     Exception::IllegalInstruction
+    // Internal     2   BUS Error (Unaligned Memory Access)     Exception::LoadMisaligned
+    // External    31   RTC peripheral interrupts               Interrupt::MachineExternal
+
     unsafe {
-        // Convert the irq bitmask to a riscv Trap type, and then call the _dispatch functions,
-        // which will then delegate to the `__EXCEPTIONS`, `__CORE_INTERRUPTS`, or
-        // '__EXTERNAL_INTERRUPTS' arrays.
-        if let Some(mcause) = irq_to_mcause(irqs) {
-            // Handle the trap
-            match mcause {
-                riscv::interrupt::Trap::Interrupt(code) => _dispatch_core_interrupt(code),
-                riscv::interrupt::Trap::Exception(code) => _dispatch_exception(&*trap_frame, code),
-            }
-        }
+        ULP_DEBUG_GLOBAL_TRAP_COUNT += 1;
+        ULP_DEBUG_GLOBAL_TRAP_CAUSE = irqs;
+    }
+
+    // Converts an IRQ bitmask value into a riscv-rt-compatible
+    // interrrupt::Trap type (Interrupt or Exception).
+    // If multiple bits in the bitmask are set,
+    // handles them in order of Trap number. Exceptions first, then local interrupts, then
+    // external interrupts.
+
+    // IRQ bit 1, Exception::IllegalInstruction
+    if irqs & (1 << 1) != 0 {
+        unsafe { _dispatch_exception(&*trap_frame, Exception::IllegalInstruction.number()) }
+    }
+
+    // IRQ bit 2, Exception::LoadMisaligned
+    if irqs & (1 << 2) != 0 {
+        unsafe { _dispatch_exception(&*trap_frame, Exception::LoadMisaligned.number()) }
+    }
+
+    // IRQ bit 0, CoreInterrupt::MachineTimer
+    if irqs & 1 != 0 {
+        unsafe { _dispatch_core_interrupt(CoreInterrupt::MachineTimer.number()) }
+    }
+
+    // IRQ bit 31, CoreInterrupt::MachineExternal
+    if irqs & (1 << 31) != 0 {
+        unsafe { _dispatch_core_interrupt(CoreInterrupt::MachineExternal.number()) }
     }
 }
 
@@ -160,4 +164,37 @@ unsafe fn _ulp_external_interrupt_handler() {
             .status_w1tc()
             .write(|w| unsafe { w.bits(rtcio_int_st.bits()) });
     }
+}
+
+/// Call the custom timer instruciton on the ulp core.
+/// When called, should trigger a MachineTimer interrupt after
+/// <count> cycles of the ULP core.
+#[inline(never)] // Never inline this, else the global ASM containing the custom isntructions won't be found.
+#[unsafe(link_section = ".ulp_trap.rust")]
+pub fn ulp_timer_insn(count: u32) -> u32 {
+    let old_c: u32;
+
+    unsafe {
+        core::arch::asm!(
+            "timer_insn {}, {}",
+            out(reg) old_c,
+            in(reg) count
+        );
+    }
+    old_c
+}
+
+/// Pause execution until an interrupt becomes pending. The bitmask of pending IRQs is returned.
+#[inline(never)] // Never inline this, else the global ASM containing the custom isntructions won't be found.
+#[unsafe(link_section = ".ulp_trap.rust")]
+pub fn ulp_wait_irq() -> u32 {
+    let mut pend: u32 = 0;
+
+    unsafe {
+        core::arch::asm!(
+            "waitirq_insn {}",
+            out(reg) pend,
+        );
+    }
+    pend
 }

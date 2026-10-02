@@ -102,6 +102,16 @@
   r_type_insn 0b0000100, 0, 0, 0b100, "regnum_\_rd", 0b0001011
 .endm
 
+/**
+ * Instruction: timer rd, rs
+ * Description: Reset the timer counter to a new value. 
+ *              The counter counts down clock cycles and triggers the timer interrupt when transitioning from 1 to 0.
+ *              Setting the counter to zero disables the timer. The old value of the counter is written to rd.
+ */
+.macro timer_insn _rd _rs
+  r_type_insn 0b0000101, 0, "regnum_\_rs", 0b110, "regnum_\_rd", 0b0001011
+.endm
+
 /* Much of the following assembly was sourced from the following ESP-IDF files...
 *  ...irq handler macros:
 *    https://github.com/espressif/esp-idf/blob/12f36a021f511cd4de41d3fffff146c5336ac1e7/components/ulp/ulp_riscv/ulp_core/ulp_riscv_vectors.S
@@ -199,7 +209,6 @@ _ulp_start_trap:
      * This will be the second argumet to _start_trap_rust.
      */
     getq_insn a1, q1
-
     /* Call the global interrupt handler. The interrupt status is passed as the argument in a0.
      * We do not re-enable interrupts before calling the handler as ULP RISC-V does not
      * support nested interrupts.
