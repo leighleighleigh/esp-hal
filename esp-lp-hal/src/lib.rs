@@ -67,6 +67,8 @@ pub(crate) static mut CPU_CLOCK: u32 = LP_FAST_CLK_HZ;
 #[cfg(esp32c6)]
 global_asm!(include_str!("./asm/lp_start.S"));
 #[cfg(any(esp32s2, esp32s3))]
+global_asm!(include_str!("./asm/ulp_macros.S"));
+#[cfg(any(esp32s2, esp32s3))]
 global_asm!(include_str!("./asm/ulp_start.S"));
 
 /// Wake up the HP core

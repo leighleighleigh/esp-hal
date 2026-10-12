@@ -21,8 +21,7 @@ pub fn ulp_setup_interrupts() {
 }
 
 /// Calls maskirq instruction to disable interrupts. Returns the previous setting.
-#[inline(never)] // Never inline this, else the global ASM containing the custom isntructions won't be found.
-#[unsafe(link_section = ".ulp_trap.rust")]
+#[inline(always)]
 pub fn ulp_maskirq(disable_mask: u32) -> u32 {
     // Does not affect the internal exception bits,
     //  which are always enabled (unmasked, value here is 0).
@@ -34,6 +33,7 @@ pub fn ulp_maskirq(disable_mask: u32) -> u32 {
     let old_mask: u32;
 
     unsafe {
+        core::arch::asm!(include_str!("../asm/ulp_macros.S"));
         core::arch::asm!(
             "maskirq_insn {}, {}",
             out(reg) old_mask,
@@ -169,12 +169,12 @@ unsafe fn _ulp_external_interrupt_handler() {
 /// Call the custom timer instruciton on the ulp core.
 /// When called, should trigger a MachineTimer interrupt after
 /// <count> cycles of the ULP core.
-#[inline(never)] // Never inline this, else the global ASM containing the custom isntructions won't be found.
-#[unsafe(link_section = ".ulp_trap.rust")]
+#[inline(always)]
 pub fn ulp_timer_insn(count: u32) -> u32 {
     let old_c: u32;
 
     unsafe {
+        core::arch::asm!(include_str!("../asm/ulp_macros.S"));
         core::arch::asm!(
             "timer_insn {}, {}",
             out(reg) old_c,
@@ -185,12 +185,12 @@ pub fn ulp_timer_insn(count: u32) -> u32 {
 }
 
 /// Pause execution until an interrupt becomes pending. The bitmask of pending IRQs is returned.
-#[inline(never)] // Never inline this, else the global ASM containing the custom isntructions won't be found.
-#[unsafe(link_section = ".ulp_trap.rust")]
+#[inline(always)]
 pub fn ulp_wait_irq() -> u32 {
     let mut pend: u32 = 0;
 
     unsafe {
+        core::arch::asm!(include_str!("../asm/ulp_macros.S"));
         core::arch::asm!(
             "waitirq_insn {}",
             out(reg) pend,
