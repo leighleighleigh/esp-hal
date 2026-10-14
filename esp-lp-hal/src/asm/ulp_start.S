@@ -1,5 +1,5 @@
-/*       Disable compressed instructions */
-.option  norvc
+/*       Enable compressed instructions */
+.option  rvc
 
 /* Much of the following assembly was sourced from the following ESP-IDF files...
 *  ...irq handler macros:

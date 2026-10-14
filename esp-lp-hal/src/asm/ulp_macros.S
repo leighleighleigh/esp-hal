@@ -2,9 +2,6 @@
 .ifndef HAS_ULP_MACROS
 .set HAS_ULP_MACROS, 1
 
-/*       Disable compressed instructions */
-.option  norvc
-
 /**
  * Defines the assembly macros needed for custom instructions on the ULP RISCV core.
  * Adapted from the following ESP-IDF header:
