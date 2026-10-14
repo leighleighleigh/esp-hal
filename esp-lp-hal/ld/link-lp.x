@@ -36,6 +36,8 @@ SECTIONS
         
         KEEP(*(.init));
         KEEP(*(.init.rust));        
+        KEEP(*(.trap));        
+        KEEP(*(.trap.rust));        
         *(.text)
         *(.text*)
     } > ram
@@ -63,5 +65,5 @@ SECTIONS
         PROVIDE(end = .);
     } > ram
 
-    __stack_top = ORIGIN(ram) + LENGTH(ram);
+    _stack_start = ORIGIN(ram) + LENGTH(ram);
 }
