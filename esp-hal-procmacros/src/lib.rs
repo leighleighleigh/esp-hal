@@ -202,11 +202,26 @@ pub fn load_lp_code(input: TokenStream) -> TokenStream {
     lp_core::load_lp_code(input.into(), lp_core::RealFilesystem).into()
 }
 
+/// Load shared variables defined in an LP/ULP application, so they can be accessed.
+/// ````
+#[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
+#[proc_macro]
+pub fn load_shared(input: TokenStream) -> TokenStream {
+    lp_core::load_shared(input.into(), lp_core::RealFilesystem).into()
+}
+
 /// Marks the entry function of a LP core / ULP program.
 #[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
 #[proc_macro_attribute]
 pub fn entry(args: TokenStream, input: TokenStream) -> TokenStream {
     lp_core::entry(args.into(), input.into()).into()
+}
+
+/// Marks a global static mut as shared, allowing the HP core to access it.
+#[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
+#[proc_macro_attribute]
+pub fn shared(args: TokenStream, input: TokenStream) -> TokenStream {
+    lp_core::shared(args.into(), input.into()).into()
 }
 
 /// Attribute to declare the entry point of the program.

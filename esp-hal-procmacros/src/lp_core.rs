@@ -3,6 +3,42 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 #[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
+pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let _attrs: Vec<_> = attr.clone().into_iter().collect();
+    let items: Vec<_> = item.clone().into_iter().collect();
+    // item must be the following format, at the moment:
+    // pub static [mut] #ITEM : #TYPE = #INIT_VALUE;
+    let is_pub = items[0].to_string().starts_with("pub");
+    let is_static = items[1].to_string().starts_with("static");
+    let is_mut = items[2].to_string().starts_with("mut");
+
+    if !is_pub || !is_static {
+        return r#"compile_error!("Variable must be 'pub static [mut]'");"#
+            .parse()
+            .unwrap();
+    }
+
+    let mut var_name = items[2].to_string();
+    let mut var_type = items[4].to_string();
+    if is_mut {
+        var_name = items[3].to_string();
+        var_type = items[5].to_string();
+    }
+
+    let out: TokenStream = format!(
+        r#"#[used]
+        #[unsafe(no_mangle)]
+        #[unsafe(export_name = "__ULP_${var_name}${var_type}")]
+        {item}"#,
+    )
+    .parse()
+    .unwrap();
+
+    // println!("{}", out.to_string());
+    out
+}
+
+#[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
 pub fn entry(args: TokenStream, input: TokenStream) -> TokenStream {
     use proc_macro_crate::FoundCrate;
     #[cfg(not(test))]
@@ -375,6 +411,61 @@ pub fn load_lp_code(input: TokenStream, fs: impl Filesystem) -> TokenStream {
             LpCoreCode {}
         }
     }
+}
+
+#[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
+pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
+    use object::{File, Object, ObjectSection, ObjectSymbol, Section, SectionFlags};
+    use parse::Error;
+    use proc_macro2::Span;
+    use syn::{LitStr, parse};
+
+    let lit: LitStr = match syn::parse2(input) {
+        Ok(lit) => lit,
+        Err(e) => return e.into_compile_error(),
+    };
+
+    let elf_file = lit.value();
+
+    if !fs.exists(&elf_file) {
+        return Error::new(Span::call_site(), "File not found").to_compile_error();
+    }
+
+    let bin_data = fs.read(&elf_file).unwrap();
+    let obj_file = match File::parse(&*bin_data) {
+        Ok(obj_file) => obj_file,
+        Err(e) => {
+            return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
+        }
+    };
+    let sections = obj_file.sections();
+    let mut sections: Vec<Section> = sections
+        .into_iter()
+        .filter(|section| match section.flags() {
+            SectionFlags::Elf { sh_flags: sh } => (sh & u64::from(object::elf::SHF_ALLOC)) != 0,
+            _ => false,
+        })
+        .collect();
+    sections.sort_by(|a, b| a.address().partial_cmp(&b.address()).unwrap());
+
+    let shared_variable_symbols = obj_file
+        .symbols()
+        .filter(|s| s.name().unwrap().starts_with("__ULP_$"))
+        .map(|s| s.name().unwrap().trim_start_matches("__ULP_$"));
+
+    let mut args: Vec<TokenStream> = vec![];
+    for magic_symbol in shared_variable_symbols {
+        let names_and_types: Vec<_> = magic_symbol.split("$").collect();
+        let name = names_and_types[0];
+        let ty = names_and_types[1];
+        args.push(
+            format!("pub static mut {} : {};", name, ty)
+                .parse()
+                .unwrap(),
+        );
+    }
+
+    quote! {#(#args),*}
 }
 
 #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]

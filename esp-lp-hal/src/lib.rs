@@ -43,7 +43,7 @@ pub mod interrupt;
 
 /// The prelude
 pub mod prelude {
-    pub use procmacros::{entry, handler};
+    pub use procmacros::{entry, handler, shared};
 }
 
 cfg_select! {

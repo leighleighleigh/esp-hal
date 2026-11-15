@@ -317,12 +317,12 @@ mod macros;
 
 #[instability::unstable]
 pub use procmacros::handler;
-#[instability::unstable]
-#[cfg(ulp_riscv_driver_supported)]
-pub use procmacros::load_lp_code;
 #[cfg(feature = "rt")]
 pub use procmacros::main;
 pub use procmacros::ram;
+#[instability::unstable]
+#[cfg(ulp_riscv_driver_supported)]
+pub use procmacros::{load_lp_code, load_shared};
 
 #[instability::unstable]
 #[cfg(ulp_riscv_driver_supported)]
