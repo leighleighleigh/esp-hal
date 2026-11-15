@@ -45,11 +45,13 @@ embedded-io-06    = { package = "embedded-io", version = "0.6",  optional = true
 embedded-io-07    = { package = "embedded-io", version = "0.7",  optional = true }
 nb                = { version = "1.1.0",  optional = true }
 procmacros        = { version = "0.23.0", package = "esp-hal-procmacros", path = "../esp-hal-procmacros" }
-riscv             = { version = "0.15", features = ["critical-section-single-hart"] }
+riscv             = { version = "0.16.1", default-features = false }
+riscv-rt = { version = "0.18.0", features = ["single-hart", "no-mhartid", "no-xtvec", "no-xie-xip", "custom-setup-interrupts"] }
 esp-metadata-generated = { version = "0.5.1", path = "../esp-metadata-generated" }
 esp32c6-lp        = { version = "0.3.0", features = ["critical-section"], optional = true, git = "https://github.com/esp-rs/esp-pacs", rev = "fc3e6d4" }
 esp32s2-ulp       = { version = "0.3.0", features = ["critical-section"], optional = true, git = "https://github.com/esp-rs/esp-pacs", rev = "fc3e6d4" }
 esp32s3-ulp       = { version = "0.3.0", features = ["critical-section"], optional = true, git = "https://github.com/esp-rs/esp-pacs", rev = "fc3e6d4" }
+critical-section = { version = "1.2.0", default-features = false, features = ["restore-state-bool"] }
 
 [dev-dependencies]
 panic-halt = "0.2.0"
@@ -97,6 +99,10 @@ required-features = ["esp32c6"]
 [[example]]
 name              = "uart"
 required-features = ["esp32c6"]
+
+[[example]]
+name              = "exceptions"
+required-features = ["esp32s3"]
 
 [lints.rust]
 unexpected_cfgs = "allow"
