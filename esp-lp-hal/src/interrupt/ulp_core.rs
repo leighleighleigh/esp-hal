@@ -75,11 +75,6 @@ pub unsafe extern "C" fn ulp_start_trap_rust(trap_frame: *const TrapFrame, irqs:
     // This is done in the _ulp_start_trap assembly function, and passed in $irq argument.
     // Multiple irq bits may be set, so this function will need to check them all.
 
-    unsafe extern "Rust" {
-        pub static mut ULP_DEBUG_GLOBAL_TRAP_COUNT: u32;
-        pub static mut ULP_DEBUG_GLOBAL_TRAP_CAUSE: u32;
-    }
-
     unsafe extern "C" {
         // These functions are provided by the riscv-macros crate:
         // https://github.com/rust-embedded/riscv/blob/b3a70b7945f229e828d87dbd7e003cec291db23a/riscv-macros/src/riscv.rs#L242
@@ -92,11 +87,6 @@ pub unsafe extern "C" fn ulp_start_trap_rust(trap_frame: *const TrapFrame, irqs:
     // Internal     1   EBREAK/ECALL or Illegal Instruction     Exception::IllegalInstruction
     // Internal     2   BUS Error (Unaligned Memory Access)     Exception::LoadMisaligned
     // External    31   RTC peripheral interrupts               Interrupt::MachineExternal
-
-    unsafe {
-        ULP_DEBUG_GLOBAL_TRAP_COUNT += 1;
-        ULP_DEBUG_GLOBAL_TRAP_CAUSE = irqs;
-    }
 
     // Converts an IRQ bitmask value into a riscv-rt-compatible
     // interrrupt::Trap type (Interrupt or Exception).
