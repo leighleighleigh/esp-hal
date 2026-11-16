@@ -4,31 +4,69 @@ use quote::{format_ident, quote};
 
 #[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
 pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
+    use parse::Error;
+    use proc_macro2::Span;
+    use syn::parse;
+
     let _attrs: Vec<_> = attr.clone().into_iter().collect();
     let items: Vec<_> = item.clone().into_iter().collect();
+
     // item must be the following format, at the moment:
     // pub static [mut] #ITEM : #TYPE = #INIT_VALUE;
+
+    // Minimum of 8 items, depending on scope of #TY
+    // pub static #ITEM: #TY = #INIT;
+    // Minimum of 9 items, depending on scope of #TY
+    // pub static mut #ITEM: #TY = #INIT;
+
     let is_pub = items[0].to_string().starts_with("pub");
     let is_static = items[1].to_string().starts_with("static");
-    let is_mut = items[2].to_string().starts_with("mut");
 
     if !is_pub || !is_static {
-        return r#"compile_error!("Variable must be 'pub static [mut]'");"#
-            .parse()
-            .unwrap();
+        return Error::new(Span::call_site(), "Variable must be `pub static`").to_compile_error();
     }
 
-    let mut var_name = items[2].to_string();
-    let mut var_type = items[4].to_string();
-    if is_mut {
-        var_name = items[3].to_string();
-        var_type = items[5].to_string();
-    }
+    let is_mut = items[2].to_string().starts_with("mut");
+    let is_mut_flag = if is_mut { "mut" } else { ""};
+
+    let var_name = if !is_mut {
+        items[2].to_string()
+    } else {
+        items[3].to_string()
+    };
+
+    // after var_name, should go
+    // : (colon)
+    // #TYPE (1 or more items)
+    // = (equals)
+    // #INIT (1 item I think? maybe more?)
+    // ; (semicolon)
+
+    let mut var_type: String = String::new();
+    let start_idx = if !is_mut { 4 } else { 5 };
+    let _ = items[start_idx..items.len()]
+        .iter()
+        .take_while(|i| {
+            if i.to_string() == "=" {
+                // println!("var_type = {}", var_type);
+                return false;
+            }
+            var_type = format!("{}{}", var_type, i.to_string());
+            true
+        })
+        .collect::<Vec<_>>();
+
+    let encoded_var_type = var_type
+        .as_bytes()
+        .iter()
+        .map(|x| format!("{:02x}", x))
+        .collect::<String>();
+    // println!("{} : {}; // {}", var_name, var_type, encoded_var_type);
 
     let out: TokenStream = format!(
         r#"#[used]
         #[unsafe(no_mangle)]
-        #[unsafe(export_name = "__ULP_${var_name}${var_type}")]
+        #[unsafe(export_name = "__ULP_${var_name}${encoded_var_type}${is_mut_flag}")]
         {item}"#,
     )
     .parse()
@@ -36,6 +74,80 @@ pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // println!("{}", out.to_string());
     out
+}
+
+#[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
+pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
+    use object::{File, Object, ObjectSection, ObjectSymbol, Section, SectionFlags};
+    use parse::Error;
+    use proc_macro2::Span;
+    use syn::{LitStr, parse};
+
+    let lit: LitStr = match syn::parse2(input) {
+        Ok(lit) => lit,
+        Err(e) => return e.into_compile_error(),
+    };
+
+    let elf_file = lit.value();
+
+    if !fs.exists(&elf_file) {
+        return Error::new(Span::call_site(), "File not found").to_compile_error();
+    }
+
+    let bin_data = fs.read(&elf_file).unwrap();
+    let obj_file = match File::parse(&*bin_data) {
+        Ok(obj_file) => obj_file,
+        Err(e) => {
+            return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
+        }
+    };
+    let sections = obj_file.sections();
+    let mut sections: Vec<Section> = sections
+        .into_iter()
+        .filter(|section| match section.flags() {
+            SectionFlags::Elf { sh_flags: sh } => (sh & u64::from(object::elf::SHF_ALLOC)) != 0,
+            _ => false,
+        })
+        .collect();
+    sections.sort_by(|a, b| a.address().partial_cmp(&b.address()).unwrap());
+
+    let shared_variable_symbols = obj_file
+        .symbols()
+        .filter(|s| s.name().unwrap().starts_with("__ULP_$"))
+        .map(|s| s.name().unwrap().trim_start_matches("__ULP_$"));
+
+    let mut args: Vec<TokenStream> = vec![];
+    for magic_symbol in shared_variable_symbols {
+        let names_and_types: Vec<_> = magic_symbol.split("$").collect();
+        let var_name = names_and_types[0];
+        let encoded_var_type = names_and_types[1];
+        let mut is_mut = names_and_types[2];
+        // improve formatting
+        if is_mut.len() > 0 {
+            is_mut = "mut ";
+        }
+
+        let ty_bytes: Vec<u8> = { 0..encoded_var_type.len() }
+            .step_by(2)
+            .into_iter()
+            .map(|a| u8::from_str_radix(&encoded_var_type[a..a + 2], 16).unwrap())
+            .collect();
+
+        let var_type: String = String::from_utf8(ty_bytes).unwrap();
+
+        let symbol_arg = format!(
+            "pub safe static {}{} : {}; // {}",
+            is_mut, var_name, var_type, encoded_var_type
+        );
+        // println!("{}", symbol_arg);
+        args.push(symbol_arg.parse().unwrap());
+    }
+
+    quote! {
+        unsafe extern "Rust" {
+            #(#args)*
+        }
+    }
 }
 
 #[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
@@ -413,60 +525,6 @@ pub fn load_lp_code(input: TokenStream, fs: impl Filesystem) -> TokenStream {
     }
 }
 
-#[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
-pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
-    use object::{File, Object, ObjectSection, ObjectSymbol, Section, SectionFlags};
-    use parse::Error;
-    use proc_macro2::Span;
-    use syn::{LitStr, parse};
-
-    let lit: LitStr = match syn::parse2(input) {
-        Ok(lit) => lit,
-        Err(e) => return e.into_compile_error(),
-    };
-
-    let elf_file = lit.value();
-
-    if !fs.exists(&elf_file) {
-        return Error::new(Span::call_site(), "File not found").to_compile_error();
-    }
-
-    let bin_data = fs.read(&elf_file).unwrap();
-    let obj_file = match File::parse(&*bin_data) {
-        Ok(obj_file) => obj_file,
-        Err(e) => {
-            return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
-        }
-    };
-    let sections = obj_file.sections();
-    let mut sections: Vec<Section> = sections
-        .into_iter()
-        .filter(|section| match section.flags() {
-            SectionFlags::Elf { sh_flags: sh } => (sh & u64::from(object::elf::SHF_ALLOC)) != 0,
-            _ => false,
-        })
-        .collect();
-    sections.sort_by(|a, b| a.address().partial_cmp(&b.address()).unwrap());
-
-    let shared_variable_symbols = obj_file
-        .symbols()
-        .filter(|s| s.name().unwrap().starts_with("__ULP_$"))
-        .map(|s| s.name().unwrap().trim_start_matches("__ULP_$"));
-
-    let mut args: Vec<TokenStream> = vec![];
-    for magic_symbol in shared_variable_symbols {
-        let names_and_types: Vec<_> = magic_symbol.split("$").collect();
-        let name = names_and_types[0];
-        let ty = names_and_types[1];
-        args.push(
-            format!("pub static mut {} : {};", name, ty)
-                .parse()
-                .unwrap(),
-        );
-    }
-
-    quote! {#(#args),*}
-}
 
 #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
 pub(crate) trait Filesystem {
