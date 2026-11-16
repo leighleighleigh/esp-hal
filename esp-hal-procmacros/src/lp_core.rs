@@ -27,7 +27,7 @@ pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let is_mut = items[2].to_string().starts_with("mut");
-    let is_mut_flag = if is_mut { "mut" } else { ""};
+    let is_mut_flag = if is_mut { "mut" } else { "" };
 
     let var_name = if !is_mut {
         items[2].to_string()
@@ -48,7 +48,6 @@ pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
         .iter()
         .take_while(|i| {
             if i.to_string() == "=" {
-                // println!("var_type = {}", var_type);
                 return false;
             }
             var_type = format!("{}{}", var_type, i.to_string());
@@ -61,7 +60,6 @@ pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
         .iter()
         .map(|x| format!("{:02x}", x))
         .collect::<String>();
-    // println!("{} : {}; // {}", var_name, var_type, encoded_var_type);
 
     let out: TokenStream = format!(
         r#"#[used]
@@ -72,16 +70,58 @@ pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
     .parse()
     .unwrap();
 
-    // println!("{}", out.to_string());
     out
 }
 
 #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
 pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
-    use object::{File, Object, ObjectSection, ObjectSymbol, Section, SectionFlags};
+    use std::io::Write;
+
+    use object::{File, Object, ObjectSymbol};
     use parse::Error;
     use proc_macro2::Span;
     use syn::{LitStr, parse};
+
+    fn base16_to_utf8(encoded: String) -> Result<String, Box<dyn std::error::Error>> {
+        // convert the base16 string into a vector of bytes,
+        // which we can then convert back into a UTF-8 string.
+        let mut encoded_bytes: Vec<u8> = vec![];
+        for a in { 0..encoded.len() }.step_by(2) {
+            let x = encoded.as_str();
+            match u8::from_str_radix(&x[a..a + 2], 16) {
+                Ok(b) => encoded_bytes.push(b),
+                Err(e) => return Err(Box::new(e)),
+            }
+        }
+        Ok(String::from_utf8(encoded_bytes).unwrap())
+    }
+
+    struct SharedSymbol {
+        name: String,
+        address: u64,
+        enc_type: String,
+        is_mut: bool,
+        dec_name: String,
+        dec_type: String,
+    }
+
+    fn decode_symbol(address: u64, name: &str) -> Result<SharedSymbol, Box<dyn std::error::Error>> {
+        let parts: Vec<_> = name.split("$").collect();
+        // Get the parts we are interested in
+        let var_name = parts[1];
+        let encoded_var_type = parts[2];
+        let is_mut = parts[3].len() > 1;
+        // Decode variable type from base16 to utf8
+        let var_type = base16_to_utf8(encoded_var_type.to_string())?;
+        Ok(SharedSymbol {
+            name: name.to_string(),
+            dec_name: var_name.to_string(),
+            address: address,
+            enc_type: encoded_var_type.to_string(),
+            dec_type: var_type,
+            is_mut: is_mut,
+        })
+    }
 
     let lit: LitStr = match syn::parse2(input) {
         Ok(lit) => lit,
@@ -89,63 +129,100 @@ pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
     };
 
     let elf_file = lit.value();
-
     if !fs.exists(&elf_file) {
         return Error::new(Span::call_site(), "File not found").to_compile_error();
     }
 
     let bin_data = fs.read(&elf_file).unwrap();
-    let obj_file = match File::parse(&*bin_data) {
+    let obj_file: File<'_> = match File::parse(&*bin_data) {
         Ok(obj_file) => obj_file,
         Err(e) => {
             return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
         }
     };
-    let sections = obj_file.sections();
-    let mut sections: Vec<Section> = sections
-        .into_iter()
-        .filter(|section| match section.flags() {
-            SectionFlags::Elf { sh_flags: sh } => (sh & u64::from(object::elf::SHF_ALLOC)) != 0,
-            _ => false,
+
+    // Iterate over shared variables, based on prefix
+    let obj_symbols = obj_file
+        .symbols()
+        .filter(|s| s.name().unwrap().starts_with("__ULP_$"));
+
+    // Decode the symbols
+    let mut symbols: Vec<SharedSymbol> = vec![];
+    for s in obj_symbols {
+        let name = s.name().unwrap();
+        match decode_symbol(s.address(), name) {
+            Ok(sy) => symbols.push(sy),
+            Err(e) => {
+                // Return early, if decoding a symbol fails
+                return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
+            }
+        };
+    }
+
+    // Create the linker script
+    let out_dir = match std::env::var("OUT_DIR") {
+        Ok(o) => o,
+        Err(e) => return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error(),
+    };
+    println!("out_dir = {}", out_dir);
+    let xpath = std::path::PathBuf::from(&(out_dir.clone() + "/lp_shared.x"));
+    let mut x = match std::fs::OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(xpath)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
+        }
+    };
+
+    for sym in &symbols {
+        let i_addr = sym.address;
+        let i_name = sym.name.clone();
+        let o_addr = i_addr + 0x5000_0000;
+        let o_name = sym.dec_name.clone();
+
+        let xdata = format_args!(
+            r#"PROVIDE({i_name} = {o_addr:#x});
+PROVIDE({o_name} = {i_name});"#
+        );
+        println!("{xdata}");
+
+        match x.write_fmt(xdata) {
+            Ok(_) => {}
+            Err(e) => {
+                return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
+            }
+        };
+    }
+    drop(x);
+
+    // Build the extern variable entires
+    let extern_variables: Vec<TokenStream> = symbols
+        .iter()
+        .map(|sym| {
+            let prefix = if sym.is_mut {
+                "pub safe static mut"
+            } else {
+                "pub safe static"
+            };
+
+            // Build the code chunk
+            let symbol_arg = format!(
+                "{} {} : {}; // {}",
+                prefix, sym.dec_name, sym.dec_type, sym.enc_type
+            );
+
+            // debugging
+            eprintln!("{}", symbol_arg);
+            symbol_arg.parse().unwrap()
         })
         .collect();
-    sections.sort_by(|a, b| a.address().partial_cmp(&b.address()).unwrap());
-
-    let shared_variable_symbols = obj_file
-        .symbols()
-        .filter(|s| s.name().unwrap().starts_with("__ULP_$"))
-        .map(|s| s.name().unwrap().trim_start_matches("__ULP_$"));
-
-    let mut args: Vec<TokenStream> = vec![];
-    for magic_symbol in shared_variable_symbols {
-        let names_and_types: Vec<_> = magic_symbol.split("$").collect();
-        let var_name = names_and_types[0];
-        let encoded_var_type = names_and_types[1];
-        let mut is_mut = names_and_types[2];
-        // improve formatting
-        if is_mut.len() > 0 {
-            is_mut = "mut ";
-        }
-
-        let ty_bytes: Vec<u8> = { 0..encoded_var_type.len() }
-            .step_by(2)
-            .into_iter()
-            .map(|a| u8::from_str_radix(&encoded_var_type[a..a + 2], 16).unwrap())
-            .collect();
-
-        let var_type: String = String::from_utf8(ty_bytes).unwrap();
-
-        let symbol_arg = format!(
-            "pub safe static {}{} : {}; // {}",
-            is_mut, var_name, var_type, encoded_var_type
-        );
-        // println!("{}", symbol_arg);
-        args.push(symbol_arg.parse().unwrap());
-    }
 
     quote! {
         unsafe extern "Rust" {
-            #(#args)*
+            #(#extern_variables)*
         }
     }
 }
@@ -524,7 +601,6 @@ pub fn load_lp_code(input: TokenStream, fs: impl Filesystem) -> TokenStream {
         }
     }
 }
-
 
 #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
 pub(crate) trait Filesystem {
