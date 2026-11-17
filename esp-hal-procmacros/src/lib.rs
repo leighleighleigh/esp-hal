@@ -202,12 +202,40 @@ pub fn load_lp_code(input: TokenStream) -> TokenStream {
     lp_core::load_lp_code(input.into(), lp_core::RealFilesystem).into()
 }
 
-/// Load shared variables defined in an LP/ULP application, so they can be accessed.
+/// Load code to be run on the LP/ULP core, but don't instantiate it yet.
+///
+/// ## Example
+/// ```rust, ignore
+/// mod app {
+///     load_lp_code_ext!("path.elf");
+/// }
+/// let lp_core_code = app::LpCoreCode {};
+/// lp_core_code.run(&mut lp_core, lp_core::LpCoreWakeupSource::HpCpu, lp_pin);
 /// ````
 #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
 #[proc_macro]
-pub fn load_shared(input: TokenStream) -> TokenStream {
-    lp_core::load_shared(input.into(), lp_core::RealFilesystem).into()
+pub fn load_lp_code_ext(input: TokenStream) -> TokenStream {
+    lp_core::load_lp_code_ext(input.into(), lp_core::RealFilesystem).into()
+}
+
+/// Load shared variables defined in an LP/ULP application, so they can be accessed.
+///
+/// ## Example
+/// ```rust, ignore
+/// mod app {
+///     load_lp_code_ext!("path.elf");
+///     mod shared {
+///         load_lp_shared!("path.elf");
+///     }
+/// }
+/// let lp_core_code = app::LpCoreCode {};
+/// lp_core_code.run(&mut lp_core, lp_core::LpCoreWakeupSource::HpCpu, lp_pin);
+/// println!("{}",unsafe { app::shared::MY_SHARED_VARIABLE });
+/// ````
+#[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
+#[proc_macro]
+pub fn load_lp_shared(input: TokenStream) -> TokenStream {
+    lp_core::load_lp_shared(input.into(), lp_core::RealFilesystem).into()
 }
 
 /// Marks the entry function of a LP core / ULP program.

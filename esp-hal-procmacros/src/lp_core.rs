@@ -74,7 +74,177 @@ pub fn shared(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
-pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
+pub fn load_lp_code_ext(input: TokenStream, fs: impl Filesystem) -> TokenStream {
+    use object::{File, Object, ObjectSection, ObjectSymbol, Section, SectionFlags};
+    use parse::Error;
+    use proc_macro_crate::{FoundCrate, crate_name};
+    use proc_macro2::Span;
+    use syn::{Ident, LitStr, parse};
+
+    let hal_crate = if cfg!(any(feature = "is-lp-core", feature = "is-ulp-core")) {
+        crate_name("esp-lp-hal")
+    } else {
+        crate_name("esp-hal")
+    };
+
+    let hal_crate = if let Ok(FoundCrate::Name(ref name)) = hal_crate {
+        let ident = Ident::new(name, proc_macro2::Span::call_site());
+        quote!( #ident )
+    } else {
+        quote!(crate)
+    };
+
+    let lit: LitStr = match syn::parse2(input) {
+        Ok(lit) => lit,
+        Err(e) => return e.into_compile_error(),
+    };
+
+    let elf_file = lit.value();
+
+    if !fs.exists(&elf_file) {
+        return Error::new(Span::call_site(), "File not found").to_compile_error();
+    }
+
+    let bin_data = fs.read(&elf_file).unwrap();
+    let obj_file = match File::parse(&*bin_data) {
+        Ok(obj_file) => obj_file,
+        Err(e) => {
+            return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
+        }
+    };
+    let sections = obj_file.sections();
+
+    let mut sections: Vec<Section> = sections
+        .into_iter()
+        .filter(|section| match section.flags() {
+            SectionFlags::Elf { sh_flags: sh } => (sh & u64::from(object::elf::SHF_ALLOC)) != 0,
+            _ => false,
+        })
+        .collect();
+    sections.sort_by(|a, b| a.address().partial_cmp(&b.address()).unwrap());
+
+    let mut binary: Vec<u8> = Vec::new();
+    let mut last_address = if cfg!(feature = "has-lp-core") {
+        0x5000_0000
+    } else {
+        0x0
+    };
+
+    if sections.is_empty() {
+        return Error::new(
+            Span::call_site(),
+            "Given file doesn't seem to have any allocatable sections.",
+        )
+        .to_compile_error();
+    } else if sections[0].address() < last_address {
+        return Error::new(
+            Span::call_site(),
+            format!(
+                "First section address is below expected base address (expected >= 0x{:x}, got 0x{:x})",
+                last_address,
+                sections[0].address()
+            ),
+        )
+        .to_compile_error();
+    }
+
+    for section in sections {
+        if section.address() > last_address {
+            let fill = section.address() - last_address;
+            binary.extend(std::iter::repeat_n(0, fill as usize));
+        }
+
+        binary.extend_from_slice(section.data().unwrap());
+        last_address = section.address() + section.size();
+    }
+
+    let magic_symbol = obj_file
+        .symbols()
+        .find(|s| s.name().unwrap().starts_with("__ULP_MAGIC_"));
+
+    let magic_symbol = if let Some(magic_symbol) = magic_symbol {
+        magic_symbol.name().unwrap()
+    } else {
+        return Error::new(
+            Span::call_site().into(),
+            "Given file doesn't seem to be an LP/ULP core application.",
+        )
+        .to_compile_error();
+    };
+
+    let magic_symbol = magic_symbol.trim_start_matches("__ULP_MAGIC_");
+    let args: Vec<proc_macro2::TokenStream> = magic_symbol
+        .split("$")
+        .map(|t| {
+            let t = if t.contains("OutputOpenDrain") {
+                t.replace("OutputOpenDrain", "LowPowerOutputOpenDrain")
+            } else {
+                t.replace("Output", "LowPowerOutput")
+            };
+            let t = t.replace("Input", "LowPowerInput");
+            t.parse().unwrap()
+        })
+        .filter(|v: &proc_macro2::TokenStream| !v.is_empty())
+        .collect();
+    let arg_names = (0..args.len())
+        .map(|i| format_ident!("arg_{i}"))
+        .collect::<Vec<_>>();
+
+    #[cfg(feature = "has-lp-core")]
+    let imports = quote! {
+        use #hal_crate::lp_core::LpCore;
+        use #hal_crate::lp_core::LpCoreWakeupSource;
+        use #hal_crate::gpio::lp_io::{LowPowerInput, LowPowerOutput, LowPowerOutputOpenDrain};
+        use #hal_crate::uart::lp_uart::LpUart;
+        use #hal_crate::i2c::lp_i2c::LpI2c;
+    };
+    #[cfg(feature = "has-ulp-core")]
+    let imports = quote! {
+        use #hal_crate::lp_core::UlpCore as LpCore;
+        use #hal_crate::lp_core::UlpCoreWakeupSource as LpCoreWakeupSource;
+        use #hal_crate::gpio::lp_io::{LowPowerInput, LowPowerOutput, LowPowerOutputOpenDrain};
+    };
+
+    #[cfg(feature = "has-lp-core")]
+    let rtc_code_start = quote! { _rtc_fast_data_start };
+    #[cfg(feature = "has-ulp-core")]
+    let rtc_code_start = quote! { _rtc_slow_data_start };
+
+    quote! {
+        #imports
+
+        // Instantiate this to start the core
+        pub struct LpCoreCode {}
+
+        impl LpCoreCode {
+            pub const fn new() -> Self {
+                Self {}
+            }
+
+            pub fn run(
+                &self,
+                lp_core: &mut LpCore,
+                wakeup_source: LpCoreWakeupSource,
+                #(#arg_names: #args),*
+            ) {
+                static LP_CODE: &[u8] = &[#(#binary),*];
+
+                // Copy the data on run()
+                unsafe extern "C" {
+                    static #rtc_code_start: u32;
+                }
+                unsafe {
+                    core::ptr::copy_nonoverlapping(LP_CODE as *const _ as *const u8, &#rtc_code_start as *const u32 as *mut u8, LP_CODE.len());
+                }
+                #(core::mem::forget(#arg_names);)*
+                lp_core.run(wakeup_source);
+            }
+        }
+    }
+}
+
+#[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
+pub fn load_lp_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
     use std::io::Write;
 
     use object::{File, Object, ObjectSymbol};
@@ -159,21 +329,30 @@ pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
         };
     }
 
-    // Create the linker script
+    // Create the linker script, in a location that the crate can link against easily.
     let out_dir = match std::env::var("OUT_DIR") {
         Ok(o) => o,
         Err(e) => return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error(),
     };
-    println!("out_dir = {}", out_dir);
-    let xpath = std::path::PathBuf::from(&(out_dir.clone() + "/lp_shared.x"));
-    let mut x = match std::fs::OpenOptions::new()
+
+    let out_dir = std::path::PathBuf::from(&out_dir.clone());
+    // Make the linker script
+    let link_path = format!("{}/lp_shared.x", out_dir.display());
+    let link_path = std::path::Path::new(&link_path);
+
+    let mut linkerfile = match std::fs::OpenOptions::new()
         .write(true)
         .append(true)
-        .open(xpath)
+        .create(true)
+        .open(link_path)
     {
         Ok(f) => f,
         Err(e) => {
-            return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
+            return Error::new(
+                Span::call_site(),
+                format!("Error opening linker file: {}", e),
+            )
+            .to_compile_error();
         }
     };
 
@@ -187,16 +366,15 @@ pub fn load_shared(input: TokenStream, fs: impl Filesystem) -> TokenStream {
             r#"PROVIDE({i_name} = {o_addr:#x});
 PROVIDE({o_name} = {i_name});"#
         );
-        println!("{xdata}");
 
-        match x.write_fmt(xdata) {
+        match linkerfile.write_fmt(xdata) {
             Ok(_) => {}
             Err(e) => {
                 return Error::new(Span::call_site(), format!("Error: {}", e)).to_compile_error();
             }
         };
     }
-    drop(x);
+    drop(linkerfile);
 
     // Build the extern variable entires
     let extern_variables: Vec<TokenStream> = symbols
@@ -214,8 +392,6 @@ PROVIDE({o_name} = {i_name});"#
                 prefix, sym.dec_name, sym.dec_type, sym.enc_type
             );
 
-            // debugging
-            eprintln!("{}", symbol_arg);
             symbol_arg.parse().unwrap()
         })
         .collect();
