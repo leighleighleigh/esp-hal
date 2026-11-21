@@ -43,7 +43,8 @@ pub mod interrupt;
 
 /// The prelude
 pub mod prelude {
-    pub use procmacros::{entry, handler, shared};
+    pub use procmacros::{entry, shared_variable};
+    pub use riscv_rt::{self, core_interrupt, exception, external_interrupt};
 }
 
 cfg_select! {

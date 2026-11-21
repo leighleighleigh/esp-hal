@@ -322,7 +322,7 @@ pub use procmacros::main;
 pub use procmacros::ram;
 #[instability::unstable]
 #[cfg(ulp_riscv_driver_supported)]
-pub use procmacros::{load_lp_code, load_lp_code_ext, load_lp_shared};
+pub use procmacros::{load_lp_code, load_lp_code_global};
 
 #[instability::unstable]
 #[cfg(ulp_riscv_driver_supported)]
