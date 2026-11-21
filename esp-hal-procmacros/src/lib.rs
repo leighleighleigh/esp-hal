@@ -228,11 +228,7 @@ pub fn entry(args: TokenStream, input: TokenStream) -> TokenStream {
 /// Marks a global static mut as shared, allowing the HP core to access it.
 #[proc_macro_attribute]
 pub fn shared_variable(_args: TokenStream, input: TokenStream) -> TokenStream {
-    #[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
-    return lp_core::shared_variable(_args.into(), input.into()).into();
-
-    #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
-    return input.into();
+    lp_core::shared_variable(_args.into(), input.into()).into()
 }
 
 /// Attribute to declare the entry point of the program.

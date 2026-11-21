@@ -2,8 +2,7 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-#[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
-pub fn shared_variable(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn shared_variable(_attr: TokenStream, item: TokenStream) -> TokenStream {
     use parse::Error;
     use proc_macro2::Span;
     use syn::parse;
@@ -14,48 +13,47 @@ pub fn shared_variable(attr: TokenStream, item: TokenStream) -> TokenStream {
     // I don't really know how to use proc_macro2,
     // so they are a good learning material.
 
-    let _attrs: Vec<_> = attr.clone().into_iter().collect();
     let items: Vec<_> = item.clone().into_iter().collect();
     let is_pub = items[0].to_string().starts_with("pub");
     let is_static = items[1].to_string().starts_with("static");
-
     if !is_pub || !is_static {
         return Error::new(Span::call_site(), "Variable must be `pub static`").to_compile_error();
     }
-
     let is_mut = items[2].to_string().starts_with("mut");
-    let is_mut_flag = if is_mut { "mut" } else { "" };
-
-    let var_name = if !is_mut {
+    let variable_name = if !is_mut {
         items[2].to_string()
     } else {
         items[3].to_string()
     };
+    let type_index_start = if !is_mut { 4 } else { 5 };
 
-    let mut var_type: String = String::new();
-    let start_idx = if !is_mut { 4 } else { 5 };
-    let _ = items[start_idx..items.len()]
-        .iter()
-        .take_while(|i| {
-            if i.to_string() == "=" {
-                return false;
-            }
-            var_type = format!("{}{}", var_type, i.to_string());
-            true
-        })
-        .collect::<Vec<_>>();
+    let mut variable_type: String = String::new();
+    for tok in items[type_index_start..items.len()].iter() {
+        if tok.to_string() == "=" {
+            break;
+        }
+        variable_type = format!("{}{}", variable_type, tok);
+    }
 
-    let encoded_var_type = var_type
-        .as_bytes()
-        .iter()
-        .map(|x| format!("{:02x}", x))
-        .collect::<String>();
-
+    // LP / ULP cores DEFINE a shared variable
+    #[cfg(any(feature = "is-lp-core", feature = "is-ulp-core"))]
     let out: TokenStream = format!(
         r#"#[used]
         #[unsafe(no_mangle)]
-        #[unsafe(export_name = "__ULP_${var_name}${encoded_var_type}${is_mut_flag}")]
+        #[unsafe(export_name = "__ULP_${variable_name}")]
         {item}"#,
+    )
+    .parse()
+    .unwrap();
+
+    // HP cores DECLARE a shared variable, as extern.
+    // The
+    #[cfg(any(feature = "has-lp-core", feature = "has-ulp-core"))]
+    let out: TokenStream = format!(
+        r#"unsafe extern "Rust" {{
+        pub safe static {mutability}{variable_name} : {variable_type};
+    }}"#,
+        mutability = if is_mut { "mut " } else { "" }
     )
     .parse()
     .unwrap();
@@ -758,7 +756,7 @@ mod tests {
         );
     }
 
-    #[cfg(any(feature = "is-lp-core"))]
+    #[cfg(feature = "is-lp-core")]
     #[test]
     fn test_lp_entry_basic() {
         let result = entry(
@@ -791,7 +789,7 @@ mod tests {
         );
     }
 
-    #[cfg(any(feature = "is-lp-core"))]
+    #[cfg(feature = "is-lp-core")]
     #[test]
     fn test_lp_entry_with_params() {
         let result = entry(
@@ -825,7 +823,7 @@ mod tests {
         );
     }
 
-    #[cfg(any(feature = "is-lp-core"))]
+    #[cfg(feature = "is-lp-core")]
     #[test]
     fn test_lp_entry_non_empty_args() {
         let result = entry(
